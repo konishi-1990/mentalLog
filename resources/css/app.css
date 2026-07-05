@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== MentalLog テーマ変数（落ち着いたトーン） ===== */
+:root {
+    /* スコア可視化用カラースケール（後続フェーズで数値表示に利用） */
+    --score-low: #38a169;    /* 低い（良好）＝緑 */
+    --score-mid: #d69e2e;    /* 中程度＝黄 */
+    --score-high: #e53e3e;   /* 高い（要注意）＝赤 */
+
+    --brand: #4f46e5;        /* アクセント（indigo） */
+    --surface: #ffffff;
+    --canvas: #f9fafb;
+}
+
+/* スコアバッジ（ストレス等 0-10 の色分け）で利用予定のユーティリティ */
+.score-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    color: #fff;
+}
+.score-badge--low  { background: var(--score-low); }
+.score-badge--mid  { background: var(--score-mid); }
+.score-badge--high { background: var(--score-high); }

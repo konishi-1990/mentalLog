@@ -1,0 +1,74 @@
+services:
+  # ---- PHP-FPM (Laravel) ----
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    container_name: mentallog-app
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - mentallog
+
+  # ---- Nginx ----
+  web:
+    image: nginx:1.27-alpine
+    container_name: mentallog-web
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - mentallog
+
+  # ---- PostgreSQL ----
+  db:
+    image: postgres:16-alpine
+    container_name: mentallog-db
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-mentallog}
+      POSTGRES_USER: ${DB_USERNAME:-mentallog}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      TZ: Asia/Tokyo
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-mentallog} -d ${DB_DATABASE:-mentallog}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - mentallog
+
+  # ---- Adminer (DB確認用・開発補助) ----
+  adminer:
+    image: adminer:latest
+    container_name: mentallog-adminer
+    ports:
+      - "${ADMINER_PORT:-8081}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      - db
+    networks:
+      - mentallog
+
+volumes:
+  db-data:
+
+networks:
+  mentallog:
+    driver: bridge
