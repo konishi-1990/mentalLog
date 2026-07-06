@@ -1,0 +1,43 @@
+{
+    "Profile": "プロフィール",
+    "Profile Information": "プロフィール情報",
+    "Update your account's profile information and email address.": "アカウントのプロフィール情報とメールアドレスを更新します。",
+    "Name": "名前",
+    "Email": "メールアドレス",
+    "Password": "パスワード",
+    "Save": "保存",
+    "Saved.": "保存しました。",
+    "Update Password": "パスワードの変更",
+    "Ensure your account is using a long, random password to stay secure.": "安全のため、長くランダムなパスワードを使用してください。",
+    "Current Password": "現在のパスワード",
+    "New Password": "新しいパスワード",
+    "Confirm Password": "パスワード（確認）",
+    "Delete Account": "アカウントの削除",
+    "Once your account is deleted, all of its resources and data will be permanently deleted. Before deleting your account, please download any data or information that you wish to retain.": "アカウントを削除すると、すべてのリソースとデータが完全に削除されます。削除する前に、保持したいデータや情報をダウンロードしてください。",
+    "Are you sure you want to delete your account?": "本当にアカウントを削除しますか？",
+    "Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.": "アカウントを削除すると、すべてのリソースとデータが完全に削除されます。完全に削除してよければ、確認のためパスワードを入力してください。",
+    "Cancel": "キャンセル",
+    "Your email address is unverified.": "メールアドレスが未確認です。",
+    "Click here to re-send the verification email.": "確認メールを再送するにはこちらをクリックしてください。",
+    "A new verification link has been sent to your email address.": "新しい確認リンクをメールアドレスに送信しました。",
+
+    "Dashboard": "ダッシュボード",
+    "Log Out": "ログアウト",
+    "Log in": "ログイン",
+    "Remember me": "ログイン状態を保持する",
+    "Forgot your password?": "パスワードをお忘れですか？",
+    "Register": "新規登録",
+    "Already registered?": "すでに登録済みですか？",
+
+    "Reset Password": "パスワードの再設定",
+    "Email Password Reset Link": "パスワード再設定リンクを送信",
+    "Forgot your password? No problem. Just let us know your email address and we will email you a password reset link that will allow you to choose a new one.": "パスワードをお忘れですか？問題ありません。メールアドレスを入力していただければ、新しいパスワードを設定するための再設定リンクをメールでお送りします。",
+
+    "Confirm": "確認",
+    "This is a secure area of the application. Please confirm your password before continuing.": "ここはアプリケーションの保護された領域です。続行するにはパスワードを確認してください。",
+
+    "Verify Email": "メールアドレスの確認",
+    "Resend Verification Email": "確認メールを再送",
+    "Thanks for signing up! Before getting started, could you verify your email address by clicking on the link we just emailed to you? If you didn't receive the email, we will gladly send you another.": "ご登録ありがとうございます！ご利用を開始する前に、先ほどお送りしたメール内のリンクをクリックしてメールアドレスを確認してください。メールが届いていない場合は、再送いたします。",
+    "A new verification link has been sent to the email address you provided during registration.": "ご登録いただいたメールアドレスへ、新しい確認リンクを送信しました。"
+}
