@@ -4,19 +4,22 @@
 
 メンタルケアの第一歩として「記録 → 振り返り → 自己認知」を回すことを目的とする。特に、ストレス時に陥りがちな**思考のクセ（認知のクセ）を毎回チェック**して自覚を促すことを重視している。
 
+🌐 本番: **https://mentallog.cde.jp**
+
 ---
 
 ## 目次
 - [主な機能](#主な機能)
 - [技術スタック](#技術スタック)
-- [セットアップ](#セットアップdocker)
+- [ローカル開発（Docker）](#ローカル開発docker)
+- [運用スクリプト（bin/）](#運用スクリプトbin)
+- [本番デプロイ](#本番デプロイ)
 - [使い方](#使い方)
 - [ロールと権限](#ロールと権限)
 - [画面一覧](#画面一覧)
 - [テスト](#テスト)
 - [ディレクトリ構成](#ディレクトリ構成)
 - [ドキュメント](#ドキュメント)
-- [よく使うコマンド](#よく使うコマンド)
 
 ---
 
@@ -44,6 +47,8 @@
 - ○×項目マスタ（ユーザ毎に追加・改名・並び替え・無効化）
 - 管理者：ユーザ管理（CRUD・ロール変更・有効無効）、チェックリスト共通マスタ管理
 
+> UI は日本語化済み（`lang/ja.json`）。トップページ `/` は認証状態に応じてログイン／ダッシュボードへ誘導。
+
 ---
 
 ## 技術スタック
@@ -55,18 +60,20 @@
 | フロント | Blade + Tailwind CSS + Chart.js（Vite ビルド） |
 | 認証 | Laravel Breeze（Blade スタック） |
 | テスト | Pest（TDD、専用 PostgreSQL に対して実行、カバレッジ pcov） |
-| 実行環境 | Docker（app: php-fpm / web: nginx / db: postgres / adminer） |
+| 実行環境 | Docker（マルチステージ / dev・本番共通の Dockerfile） |
+| 本番配信 | 上位 nginx-proxy(jwilder) + Let's Encrypt で TLS 終端 |
+| CI/CD | GitHub Actions（`product` への PR マージで SSH 自動デプロイ） |
 
 ---
 
-## セットアップ（Docker）
+## ローカル開発（Docker）
 
 前提：Docker Desktop（Compose v2）。ポート 8080 / 8081 / 5432 が空いていること。
 
 ```bash
 cp .env.docker.example .env   # 既に .env がある場合は不要
 make build                    # イメージビルド
-make up                       # コンテナ起動
+./bin/start.sh                # コンテナ起動（= make up）
 make migrate                  # マイグレーション
 make seed                     # 初期データ（ロール・チェックリストマスタ・管理者）
 make npm-build                # フロントビルド（開発時は make npm-dev）
@@ -77,14 +84,70 @@ make npm-build                # フロントビルド（開発時は make npm-de
 | アプリ | http://localhost:8080 |
 | DB確認（Adminer） | http://localhost:8081 |
 
-- **初期管理者**：`admin@example.com` / `password`
+- **初期管理者（開発シード）**：`admin@example.com` / `password`
+- 開発コンテナ構成：`app`(php-fpm) / `web`(nginx) / `db`(postgres) / `adminer`
 - Laravel を新規から作る場合など、詳細は `docs/docker.md` を参照。
+
+---
+
+## 運用スクリプト（bin/）
+
+日常操作用のショートカット。**`.env` の `APP_ENV` で dev / 本番を自動判定**するため、ローカルでも VPS でも同じコマンドで動く（オプション不要）。
+
+| スクリプト | 役割 |
+|---|---|
+| `bin/start.sh` | コンテナ起動 |
+| `bin/stop.sh` | コンテナ停止・削除 |
+| `bin/restart.sh` | 再起動 |
+| `bin/ssh.sh` | app コンテナへシェル接続 / コマンド実行 |
+| `bin/sql.sh` | DB コンテナ上で psql |
+
+```bash
+./bin/ssh.sh                       # app コンテナに入る
+./bin/ssh.sh php artisan migrate   # コンテナ内でコマンド実行
+./bin/sql.sh                       # psql プロンプト
+./bin/sql.sh -c "SELECT count(*) FROM users"
+```
+
+- 環境は自動判定（`local`→`docker-compose.yml`／`production`→`docker-compose.prod.yml`）。
+- 明示的に切り替えたい場合のみ先頭に `-p`（本番）/ `-d`（dev）を付与。
+
+---
+
+## 本番デプロイ
+
+本番はコード・依存・Vite 資産を**イメージに焼き込み**、`.env` は実行時にサーバ側で供給する方式（UrlShare と同構成）。
+
+### 構成
+- `docker/php/Dockerfile`：マルチステージ（`base` / `development` / `build` / `production` / `nginx`）。`build` で `composer install --no-dev`・`vite build`・route/view cache を実施し、`production`(php-fpm) と `nginx`(静的配信) に成果物を焼き込む。
+- `docker-compose.prod.yml`：`nginx` / `php` / `db`。80/443 の終端・証明書は上位 nginx-proxy が担当（`VIRTUAL_HOST=mentallog.cde.jp`）、アプリ側はポート非公開。
+- `script/deploy.sh`：VPS 上で `git reset --hard` → `docker compose up -d --build` → `migrate` → config/route/view cache を実行。
+- `.github/workflows/deploy-product.yml`：`product` への PR マージ、または手動実行（workflow_dispatch）で SSH 経由デプロイ。
+
+### デプロイの流れ
+```
+main で開発 → main→product の PR を作成・マージ → GitHub Actions が VPS へ SSH デプロイ
+```
+手動再デプロイは Actions タブの「Deploy to Product (VPS)」→ Run workflow。
+
+### サーバ側の前提（初回のみ）
+- リポジトリを VPS に clone し `product` を checkout。
+- `.env`（`.env.production.example` を元に作成し `APP_KEY` を生成）と `.env.db`（`.env.db.example` を元に作成）を配置。両者の DB パスワードは一致させる。
+- 上位 `nginx-proxy` + letsencrypt-companion が稼働し、外部ネットワーク `nginx-proxy` が存在すること。
+- GitHub Secrets：`VPS_HOST` / `VPS_PORT` / `VPS_USER` / `VPS_SSH_KEY` / `DEPLOY_SCRIPT_PATH` / `DEPLOY_ARGS`。
+
+### 管理者ユーザの作成
+```bash
+./bin/ssh.sh php artisan app:make-admin adm@example.com
+# → パスワードを対話（秘匿）入力。--password= で一括指定も可
+```
+admin ロール・有効・メール確認済みで作成（既存なら更新）。○×項目テンプレは Observer が自動複製。
 
 ---
 
 ## 使い方
 
-1. `http://localhost:8080` にアクセスしログイン（または新規登録）。
+1. トップ（`/`）にアクセス → 未ログインなら `/login` へ。ログイン（または新規登録）。
 2. **ダッシュボード**で直近の推移と当日ログの状態を確認。
 3. **「ログを書く」**から当日の状態を記録（同一日は上書き更新）。
 4. **「分析」**で時系列・傾向・回復パターンを振り返る。
@@ -136,6 +199,7 @@ make test-filter F=LogService   # 絞り込み実行
 
 ```
 app/
+  Console/Commands/         # MakeAdmin（app:make-admin）
   Http/Controllers/         # Log / CheckItem / Analytics / Dashboard / Admin/*
   Http/Requests/            # FormRequest（バリデーション）
   Http/Middleware/          # EnsureUserIsAdmin
@@ -144,15 +208,21 @@ app/
   Services/                 # LogService / AnalyticsService（業務ロジック）
   Observers/                # UserObserver（既定○×複製・ロール付与）
   Support/                  # DefaultCheckItems
+bin/                        # 運用スクリプト（start/stop/restart/ssh/sql）
 database/
   migrations/               # 8テーブル
   seeders/                  # Role / ChecklistCategory / ChecklistOption
   factories/                # User / Log / CheckItem
+lang/ja.json                # UI 日本語化
 resources/views/            # Blade（layouts / logs / analytics / check_items / admin / errors）
 routes/web.php
+script/deploy.sh            # 本番デプロイ（VPS 上で実行）
 tests/                      # Unit / Feature（Pest）
-docker/                     # php(Dockerfile) / nginx / postgres(init)
-docs/                       # 設計・計画・テスト各種
+docker/                     # php(Dockerfile) / nginx(dev・prod conf) / postgres(init)
+docker-compose.yml          # 開発
+docker-compose.prod.yml     # 本番
+.github/workflows/          # deploy-product.yml（自動デプロイ）
+docs/                       # 設計・計画・テスト・作業履歴
 ```
 
 ---
@@ -168,19 +238,24 @@ docs/                       # 設計・計画・テスト各種
 | `docs/plan.md` | 実装プラン・進捗（TDD） |
 | `docs/docker.md` | Docker構築手順 |
 | `docs/test.md` | テスト仕様書（実施記録） |
+| `docs/chglogs/` | 日次の作業履歴 |
 
 ---
 
 ## よく使うコマンド
 
 ```bash
-make help        # コマンド一覧
-make up / down   # 起動 / 停止
-make sh          # app コンテナに入る
-make migrate     # マイグレーション
-make fresh       # DB再作成 + シーダ
-make test        # テスト
-make npm-dev     # Vite 開発サーバ
+# 運用スクリプト（dev/本番 自動判定）
+./bin/start.sh / stop.sh / restart.sh
+./bin/ssh.sh                 # app コンテナへ
+./bin/sql.sh                 # psql
+
+# Makefile（開発）
+make help                    # コマンド一覧
+make migrate                 # マイグレーション
+make fresh                   # DB再作成 + シーダ
+make test                    # テスト
+make npm-dev                 # Vite 開発サーバ
 ```
 
 ---
