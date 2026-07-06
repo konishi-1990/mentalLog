@@ -1,0 +1,40 @@
+name: Deploy to Product (VPS)
+
+# 発動条件:
+#   main → product への Pull Request が「マージ」されたときのみデプロイする。
+#   （PR を閉じただけ・product への直接 push では発動しない）
+#   workflow_dispatch で手動再デプロイも可能。
+#
+# 注意: pull_request イベントで参照されるワークフロー定義は base ブランチ（product）側の
+#       ものが使われる。よって本ファイルは product ブランチにも存在している必要がある
+#       （product は main から作成するため両ブランチに同一ファイルが入る）。
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [product] # PR のマージ先（base）が product のもの
+  workflow_dispatch: # 手動再デプロイ用
+
+# デプロイの同時実行を防止（後発の実行は前を待つ）
+concurrency:
+  group: deploy-product
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # PR がマージされた場合のみ（手動実行時は常に通す）
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # 接続情報・スクリプトパス・引数はすべて Secrets 化。
+          # コードを変更せず GitHub 設定だけで変更可能。
+          script: bash ${{ secrets.DEPLOY_SCRIPT_PATH }} ${{ secrets.DEPLOY_ARGS }}

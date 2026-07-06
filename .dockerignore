@@ -1,8 +1,34 @@
+# production ビルドは context=リポジトリ直下。イメージに不要なものを除外し、
+# ビルドを軽量・決定的にする（composer install / npm ci はビルド時に実行するため vendor / node_modules は不要）。
 .git
-node_modules
+.github
+.gitignore
+
+# 依存物（イメージ内で再インストールされる）
 vendor
+node_modules
+public/build
+public/hot
+
+# 環境ファイル（実行時にマウントで供給）
+.env
+.env.*
+!.env.example
+!.env.db.example
+!.env.production.example
+
+# ローカル/OS/ドキュメント/運用スクリプト
+.DS_Store
+docs
+bin
+script
+*.png
+README.md
+
+# キャッシュ・テスト成果物
+.phpunit.result.cache
+.phpunit.cache
 storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
-.env
