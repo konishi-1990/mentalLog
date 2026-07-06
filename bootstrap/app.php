@@ -12,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // 本番は上位 nginx-proxy が HTTPS を終端し内部へ HTTP 転送するため、
+        // X-Forwarded-Proto 等を信頼して https を正しく認識させる
+        // （これがないと asset()/@vite が http:// URL を生成し 404 / mixed content になる）
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
         ]);
