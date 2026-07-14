@@ -7,9 +7,9 @@
 
     $loggedOn = old('logged_on', $log?->logged_on?->format('Y-m-d') ?? now()->format('Y-m-d'));
     $scores = [
-        'stress' => ['label' => 'ストレス', 'default' => 5],
-        'stamina' => ['label' => '体力', 'default' => 5],
-        'mental_capacity' => ['label' => 'メンタル余裕', 'default' => 5],
+        'stress' => ['label' => 'ストレス', 'default' => 5, 'hint' => '高いときつい'],
+        'stamina' => ['label' => '体力', 'default' => 5, 'hint' => '高いと元気'],
+        'mental_capacity' => ['label' => 'メンタル余裕', 'default' => 5, 'hint' => '高いと余裕あり'],
     ];
 @endphp
 
@@ -29,7 +29,10 @@
             @php $current = old($key, $log?->{$key} ?? $meta['default']); @endphp
             <div>
                 <div class="flex items-center justify-between mb-1">
-                    <label for="{{ $key }}" class="text-sm font-medium text-gray-700">{{ $meta['label'] }}</label>
+                    <label for="{{ $key }}" class="text-sm font-medium text-gray-700">
+                        {{ $meta['label'] }}
+                        <span class="ml-1 text-xs font-normal text-gray-400">（{{ $meta['hint'] }}）</span>
+                    </label>
                     <span id="{{ $key }}_out" class="text-sm font-semibold text-indigo-600">{{ $current }}</span>
                 </div>
                 <input type="range" id="{{ $key }}" name="{{ $key }}" min="0" max="10" step="1"
