@@ -28,7 +28,32 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        $this->forgetForbiddenIntendedUrl($request);
+
         return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    /**
+     * ログイン前に管理画面へアクセスした際の遷移先が残っていると、
+     * 一般ユーザのログイン後に 403 となるため破棄する。
+     */
+    private function forgetForbiddenIntendedUrl(Request $request): void
+    {
+        if ($request->user()->isAdmin()) {
+            return;
+        }
+
+        $intended = $request->session()->get('url.intended');
+
+        if (! is_string($intended)) {
+            return;
+        }
+
+        $path = trim(parse_url($intended, PHP_URL_PATH) ?: '', '/');
+
+        if ($path === 'admin' || str_starts_with($path, 'admin/')) {
+            $request->session()->forget('url.intended');
+        }
     }
 
     /**
