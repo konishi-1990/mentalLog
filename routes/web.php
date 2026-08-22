@@ -6,6 +6,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\CheckItemController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LogController;
+use App\Http\Controllers\PersonController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,6 +35,11 @@ Route::middleware('auth')->group(function () {
     Route::resource('check-items', CheckItemController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->parameters(['check-items' => 'checkItem']);
+
+    // 相手タグマスタ（ユーザ毎）
+    Route::put('people/reorder', [PersonController::class, 'reorder'])->name('people.reorder');
+    Route::resource('people', PersonController::class)
+        ->only(['index', 'store', 'update', 'destroy']);
 });
 
 // 管理者機能

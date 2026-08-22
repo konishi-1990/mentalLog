@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\ChecklistOption;
+use App\Support\DayTypes;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -24,6 +25,14 @@ class StoreLogRequest extends FormRequest
             'stress' => ['required', 'integer', 'between:0,10'],
             'stamina' => ['required', 'integer', 'between:0,10'],
             'mental_capacity' => ['required', 'integer', 'between:0,10'],
+
+            // フェーズ1で追加した項目。既存ログが未入力のため、いずれも任意。
+            'sleep_hours' => ['nullable', 'numeric', 'between:0,24'],
+            'sleep_quality' => ['nullable', 'integer', 'between:0,10'],
+            'carryover' => ['nullable', 'integer', 'between:0,10'],
+            'controllability' => ['nullable', 'integer', 'between:0,10'],
+            'day_type' => ['nullable', Rule::in(DayTypes::codes())],
+
             'hardest_text' => ['nullable', 'string', 'max:2000'],
             'summary_text' => ['nullable', 'string', 'max:500'],
 
@@ -35,6 +44,17 @@ class StoreLogRequest extends FormRequest
             'checklist.*' => ['integer', Rule::exists('checklist_options', 'id')],
             'checklist_details' => ['array'],
             'checklist_details.*' => ['nullable', 'string', 'max:1000'],
+
+            // 回復行動の計測。いずれも任意入力。
+            'selection_meta' => ['array'],
+            'selection_meta.*.duration_min' => ['nullable', 'integer', 'between:0,1440'],
+            'selection_meta.*.effect_score' => ['nullable', 'integer', 'between:0,10'],
+
+            // 相手タグ。所有チェックは LogService 側で行う（他人の ID は無視）。
+            'people' => ['array'],
+            'people.*' => ['integer'],
+            'people_details' => ['array'],
+            'people_details.*' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
@@ -78,6 +98,13 @@ class StoreLogRequest extends FormRequest
             'stress' => 'ストレス',
             'stamina' => '体力',
             'mental_capacity' => 'メンタル余裕',
+            'sleep_hours' => '睡眠時間',
+            'sleep_quality' => '睡眠の質',
+            'carryover' => '前日からの持ち越し感',
+            'controllability' => 'コントロール可能度',
+            'day_type' => '勤務形態',
+            'selection_meta.*.duration_min' => '所要時間',
+            'selection_meta.*.effect_score' => '効いた感',
         ];
     }
 }

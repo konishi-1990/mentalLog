@@ -31,6 +31,12 @@ class AnalyticsController extends Controller
             'thoughtFreq' => $this->analytics->checklistFrequency($user, $from, $to, 'thought_habit'),
             'bodyFreq' => $this->analytics->checklistFrequency($user, $from, $to, 'body_reaction'),
             'recovery' => $this->analytics->recoveryPattern($user, $from, $to),
+            'intakeFreq' => $this->analytics->checklistFrequency($user, $from, $to, 'intake'),
+            'personFreq' => $this->analytics->personFrequency($user, $from, $to),
+            'correlations' => $this->analytics->correlations($user, $from, $to),
+            'dayTypes' => $this->analytics->dayTypeBreakdown($user, $from, $to),
+            'recoveryEffect' => $this->analytics->recoveryEffect($user, $from, $to),
+            'coverage' => $this->analytics->coverage($user, $from, $to),
         ]);
     }
 }

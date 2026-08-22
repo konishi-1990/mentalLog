@@ -81,6 +81,7 @@
                                 <th class="px-4 py-3 text-center">ストレス</th>
                                 <th class="px-4 py-3 text-center">体力</th>
                                 <th class="px-4 py-3 text-center">余裕</th>
+                                <th class="px-4 py-3 text-center">睡眠</th>
                                 <th class="px-4 py-3 text-left">まとめ</th>
                                 <th class="px-4 py-3"></th>
                             </tr>
@@ -93,6 +94,9 @@
                                     <td class="px-4 py-3 text-center {{ $stressClass($log->stress) }}">{{ $log->stress }}</td>
                                     <td class="px-4 py-3 text-center">{{ $log->stamina }}</td>
                                     <td class="px-4 py-3 text-center">{{ $log->mental_capacity }}</td>
+                                    <td class="px-4 py-3 text-center {{ $log->sleep_hours === null ? 'text-gray-300' : 'text-gray-700' }}">
+                                        {{ $log->sleep_hours === null ? '—' : rtrim(rtrim((string) $log->sleep_hours, '0'), '.').'h' }}
+                                    </td>
                                     <td class="px-4 py-3 text-gray-600 truncate max-w-xs">{{ $log->summary_text }}</td>
                                     <td class="px-4 py-3 text-right">
                                         <a href="{{ route('logs.show', $log) }}" class="text-indigo-600 hover:underline">詳細</a>
