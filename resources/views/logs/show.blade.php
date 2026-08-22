@@ -1,11 +1,21 @@
 @php
-    // ストレスは高いほど赤、体力/余裕は高いほど緑
-    $scoreClass = function (string $field, int $v): string {
-        $bad = $field === 'stress' ? $v >= 7 : $v <= 3;
-        $good = $field === 'stress' ? $v <= 3 : $v >= 7;
+    // 良し悪しの向きは項目ごとに異なる（ストレスと持ち越し感は高いほど悪い）
+    $scores = [
+        'stress' => ['label' => 'ストレス', 'higher_is_better' => false],
+        'stamina' => ['label' => '体力', 'higher_is_better' => true],
+        'mental_capacity' => ['label' => 'メンタル余裕', 'higher_is_better' => true],
+    ];
+    $extraScores = [
+        'sleep_quality' => ['label' => '睡眠の質', 'higher_is_better' => true],
+        'carryover' => ['label' => '前日からの持ち越し感', 'higher_is_better' => false],
+        'controllability' => ['label' => 'コントロール可能度', 'higher_is_better' => true],
+    ];
+
+    $scoreClass = function (bool $higherIsBetter, int $v): string {
+        $bad = $higherIsBetter ? $v <= 3 : $v >= 7;
+        $good = $higherIsBetter ? $v >= 7 : $v <= 3;
         return $bad ? 'score-badge--high' : ($good ? 'score-badge--low' : 'score-badge--mid');
     };
-    $scores = ['stress' => 'ストレス', 'stamina' => '体力', 'mental_capacity' => 'メンタル余裕'];
 @endphp
 
 <x-app-layout>
@@ -30,11 +40,46 @@
             {{-- 数値 --}}
             <section class="bg-white rounded-lg border border-gray-200 p-6">
                 <div class="grid grid-cols-3 gap-4 text-center">
-                    @foreach ($scores as $field => $label)
+                    @foreach ($scores as $field => $meta)
                         <div>
-                            <div class="text-sm text-gray-500 mb-2">{{ $label }}</div>
-                            <span class="score-badge {{ $scoreClass($field, $log->$field) }}">{{ $log->$field }}</span>
+                            <div class="text-sm text-gray-500 mb-2">{{ $meta['label'] }}</div>
+                            <span class="score-badge {{ $scoreClass($meta['higher_is_better'], $log->$field) }}">{{ $log->$field }}</span>
                             <span class="text-gray-400 text-sm"> / 10</span>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+
+            {{-- くわしく（未入力の項目は「—」。既存ログは全項目が未入力） --}}
+            <section class="bg-white rounded-lg border border-gray-200 p-6 space-y-5">
+                <h3 class="font-semibold text-gray-800">くわしく</h3>
+                <div class="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                        <div class="text-sm text-gray-500 mb-2">睡眠時間</div>
+                        @if ($log->sleep_hours !== null)
+                            <span class="text-lg font-semibold text-gray-800">{{ rtrim(rtrim((string) $log->sleep_hours, '0'), '.') }}</span>
+                            <span class="text-gray-400 text-sm"> 時間</span>
+                        @else
+                            <span class="text-gray-400">—</span>
+                        @endif
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-500 mb-2">勤務形態</div>
+                        <span class="{{ $log->day_type ? 'text-gray-800' : 'text-gray-400' }}">
+                            {{ \App\Support\DayTypes::label($log->day_type) ?? '—' }}
+                        </span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    @foreach ($extraScores as $field => $meta)
+                        <div>
+                            <div class="text-sm text-gray-500 mb-2">{{ $meta['label'] }}</div>
+                            @if ($log->$field !== null)
+                                <span class="score-badge {{ $scoreClass($meta['higher_is_better'], $log->$field) }}">{{ $log->$field }}</span>
+                                <span class="text-gray-400 text-sm"> / 10</span>
+                            @else
+                                <span class="text-gray-400">—</span>
+                            @endif
                         </div>
                     @endforeach
                 </div>
@@ -53,6 +98,25 @@
                                 <span class="font-medium">{{ $v->checkItem->name }}</span>
                                 @if ($v->detail_text)
                                     <span class="text-gray-500">— {{ $v->detail_text }}</span>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </section>
+
+            {{-- 相手タグ --}}
+            <section class="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 class="font-semibold text-gray-800 mb-3">関わった相手</h3>
+                @if ($log->people->isEmpty())
+                    <p class="text-sm text-gray-400">記録はありません。</p>
+                @else
+                    <ul class="space-y-1">
+                        @foreach ($log->people as $person)
+                            <li class="text-sm text-gray-700">
+                                <span class="font-medium">{{ $person->name }}</span>
+                                @if ($person->pivot->detail_text)
+                                    <span class="text-gray-500">— {{ $person->pivot->detail_text }}</span>
                                 @endif
                             </li>
                         @endforeach
@@ -87,6 +151,14 @@
                                     @foreach ($selections as $s)
                                         <span class="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
                                             {{ $s->option->label }}{{ $s->detail_text ? '：'.$s->detail_text : '' }}
+                                            @if ($s->duration_min !== null || $s->effect_score !== null)
+                                                <span class="ml-1 text-gray-500">
+                                                    （{{ collect([
+                                                        $s->duration_min !== null ? $s->duration_min.'分' : null,
+                                                        $s->effect_score !== null ? '効いた感 '.$s->effect_score.'/10' : null,
+                                                    ])->filter()->implode(' / ') }}）
+                                                </span>
+                                            @endif
                                         </span>
                                     @endforeach
                                 </div>

@@ -26,11 +26,16 @@ class DashboardController extends Controller
             ->checklistFrequency($user, $from, $to, 'thought_habit')
             ->take(3);
 
+        // 今回いちばん検証したい仮説「睡眠 × メンタル余裕」を1枚のカードで出す
+        $sleepMental = collect($this->analytics->correlations($user, $from, $to))
+            ->firstWhere('key', 'sleep_hours_mental_capacity');
+
         return view('dashboard', [
             'series' => $series,
             'todayLog' => $todayLog,
             'recentStress' => $recentStress,
             'topHabits' => $topHabits,
+            'sleepMental' => $sleepMental,
         ]);
     }
 }

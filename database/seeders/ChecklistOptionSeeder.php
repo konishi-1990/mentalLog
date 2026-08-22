@@ -36,6 +36,14 @@ class ChecklistOptionSeeder extends Seeder
                 ['label' => '何もできてない'],
                 ['label' => 'その他', 'requires_text' => true],
             ],
+            // 回復行動に紛れていた飲酒・カフェインを切り出す（回復行動とは別物として測る）
+            'intake' => [
+                ['label' => 'コーヒー・エナドリ'],
+                ['label' => 'アルコール'],
+                ['label' => '市販薬'],
+                ['label' => 'どちらもなし', 'is_none' => true],
+                ['label' => 'その他', 'requires_text' => true],
+            ],
         ];
 
         foreach ($data as $categoryCode => $options) {

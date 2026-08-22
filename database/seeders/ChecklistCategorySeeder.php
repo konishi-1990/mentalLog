@@ -12,7 +12,8 @@ class ChecklistCategorySeeder extends Seeder
         $categories = [
             ['code' => 'thought_habit', 'name' => '頭の中のクセ', 'sort_order' => 1],
             ['code' => 'body_reaction', 'name' => '体の反応', 'sort_order' => 2],
-            ['code' => 'recovery_action', 'name' => '回復行動', 'sort_order' => 3],
+            ['code' => 'recovery_action', 'name' => '回復行動', 'sort_order' => 3, 'tracks_effect' => true],
+            ['code' => 'intake', 'name' => '摂取したもの', 'sort_order' => 4],
         ];
 
         foreach ($categories as $category) {

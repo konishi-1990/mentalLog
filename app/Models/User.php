@@ -53,6 +53,11 @@ class User extends Authenticatable
         return $this->hasMany(CheckItem::class);
     }
 
+    public function people(): HasMany
+    {
+        return $this->hasMany(Person::class);
+    }
+
     // ---- ヘルパ ----
 
     public function isAdmin(): bool

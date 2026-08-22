@@ -3,6 +3,7 @@
     $stress = $series->pluck('stress')->values();
     $stamina = $series->pluck('stamina')->values();
     $mental = $series->pluck('mental_capacity')->values();
+    $sleep = $series->pluck('sleep_hours')->map(fn ($v) => $v === null ? null : (float) $v)->values();
 @endphp
 
 <x-app-layout>
@@ -31,7 +32,27 @@
                 @endif
             </section>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {{-- 睡眠 × メンタル余裕（今回いちばん検証したい仮説） --}}
+                <section class="bg-white rounded-lg border border-gray-200 p-6">
+                    <h3 class="text-sm text-gray-500 mb-2">睡眠時間 × メンタル余裕</h3>
+                    @if ($sleepMental === null || $sleepMental['r'] === null)
+                        <p class="text-3xl font-bold text-gray-300">—</p>
+                        <p class="mt-1 text-xs text-gray-400">
+                            睡眠時間の入力が {{ $sleepMental['n'] ?? 0 }}件。2件以上たまると相関が出ます。
+                        </p>
+                    @else
+                        <p class="text-3xl font-bold {{ abs($sleepMental['r']) >= 0.55 ? 'text-gray-800' : 'text-gray-500' }}">
+                            {{ number_format($sleepMental['r'], 2) }}
+                            <span class="text-base font-normal text-gray-400">r</span>
+                        </p>
+                        <p class="mt-1 text-xs text-gray-400">
+                            入力済み {{ $sleepMental['n'] }}件。
+                            {{ abs($sleepMental['r']) >= 0.55 ? 'はっきりした関係が出ています。' : 'まだ傾向どまりです。' }}
+                        </p>
+                    @endif
+                </section>
+
                 {{-- 直近ストレス平均 --}}
                 <section class="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 class="text-sm text-gray-500 mb-2">直近14日のストレス平均</h3>
@@ -69,10 +90,22 @@
                             { label: 'ストレス', data: @json($stress), borderColor: '#e53e3e', tension: 0.3 },
                             { label: '体力', data: @json($stamina), borderColor: '#38a169', tension: 0.3 },
                             { label: 'メンタル余裕', data: @json($mental), borderColor: '#3182ce', tension: 0.3 },
+                            {
+                                label: '睡眠時間',
+                                data: @json($sleep),
+                                borderColor: '#805ad5',
+                                borderDash: [4, 3],
+                                tension: 0.3,
+                                yAxisID: 'ySleep',
+                                spanGaps: true,
+                            },
                         ],
                     },
                     options: {
-                        scales: { y: { min: 0, max: 10 } },
+                        scales: {
+                            y: { min: 0, max: 10 },
+                            ySleep: { position: 'right', min: 0, max: 12, grid: { drawOnChartArea: false } },
+                        },
                         plugins: { legend: { position: 'bottom' } },
                     },
                 });
