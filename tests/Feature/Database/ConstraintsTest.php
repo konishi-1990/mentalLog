@@ -32,3 +32,41 @@ it('異なるユーザなら同一日でも作成できる', function () {
 
     expect(Log::count())->toBe(2);
 });
+
+it('sleep_quality が範囲外(11)だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+
+    Log::factory()->for($user)->create(['sleep_quality' => 11]);
+})->throws(QueryException::class);
+
+it('carryover が範囲外(-1)だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+
+    Log::factory()->for($user)->create(['carryover' => -1]);
+})->throws(QueryException::class);
+
+it('controllability が範囲外(11)だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+
+    Log::factory()->for($user)->create(['controllability' => 11]);
+})->throws(QueryException::class);
+
+it('sleep_hours が範囲外(24.5)だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+
+    Log::factory()->for($user)->create(['sleep_hours' => 24.5]);
+})->throws(QueryException::class);
+
+it('追加項目が NULL なら CHECK 制約を通過する（既存ログ互換）', function () {
+    $user = User::factory()->create();
+
+    $log = Log::factory()->for($user)->create([
+        'sleep_hours' => null,
+        'sleep_quality' => null,
+        'carryover' => null,
+        'controllability' => null,
+        'day_type' => null,
+    ]);
+
+    expect($log->exists)->toBeTrue();
+});

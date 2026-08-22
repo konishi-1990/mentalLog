@@ -75,7 +75,7 @@ class LogController extends Controller
     {
         $this->authorize('view', $log);
 
-        $log->load(['checkItemValues.checkItem', 'checklistSelections.option.category']);
+        $log->load(['checkItemValues.checkItem', 'checklistSelections.option.category', 'people']);
 
         return view('logs.show', compact('log'));
     }
@@ -84,13 +84,21 @@ class LogController extends Controller
     {
         $this->authorize('update', $log);
 
-        $log->load(['checkItemValues', 'checklistSelections']);
+        $log->load(['checkItemValues', 'checklistSelections', 'people']);
 
         return view('logs.edit', array_merge($this->formData($request), [
             'log' => $log,
             'checkValues' => $log->checkItemValues->keyBy('check_item_id'),
             'selectedOptionIds' => $log->checklistSelections->pluck('checklist_option_id')->all(),
             'selectionDetails' => $log->checklistSelections->pluck('detail_text', 'checklist_option_id'),
+            'selectedPersonIds' => $log->people->pluck('id')->all(),
+            'personDetails' => $log->people->mapWithKeys(fn ($p) => [$p->id => $p->pivot->detail_text]),
+            'selectionMeta' => $log->checklistSelections->mapWithKeys(fn ($s) => [
+                $s->checklist_option_id => [
+                    'duration_min' => $s->duration_min,
+                    'effect_score' => $s->effect_score,
+                ],
+            ]),
         ]));
     }
 
@@ -129,6 +137,10 @@ class LogController extends Controller
                 ->orderBy('sort_order')
                 ->get(),
             'categories' => ChecklistCategory::with(['options' => fn ($q) => $q->where('is_active', true)->orderBy('sort_order')])
+                ->orderBy('sort_order')
+                ->get(),
+            'people' => $request->user()->people()
+                ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->get(),
         ];
