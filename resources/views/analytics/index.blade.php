@@ -73,14 +73,67 @@
                     <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-indigo-500"></span>記録あり</span>
                     <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-gray-200"></span>未記録</span>
                 </div>
+
+                {{-- 欠測バイアス：平均値をどれだけ割り引いて読むべきか --}}
+                <div class="mt-5 pt-5 border-t border-gray-100">
+                    <h4 class="text-sm font-medium text-gray-700 mb-1">欠測は偏っていないか</h4>
+                    <p class="text-xs text-gray-400 mb-3">
+                        しんどい日の翌日に記録が飛んでいると、平均値は実態より軽く出ます。
+                        下の2行に差があるほど、上の平均を割り引いて読む必要があります。
+                    </p>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead class="text-gray-500">
+                                <tr>
+                                    <th class="py-1 pr-4 text-left font-normal">その日の状態</th>
+                                    <th class="py-1 pr-4 text-right font-normal">日数</th>
+                                    <th class="py-1 pr-4 text-right font-normal">ストレス</th>
+                                    <th class="py-1 text-right font-normal">メンタル余裕</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @foreach ([
+                                    '翌日も記録した日' => $coverage['bias']['next_logged'],
+                                    '翌日が欠測だった日' => $coverage['bias']['next_missing'],
+                                ] as $biasLabel => $bias)
+                                    <tr>
+                                        <td class="py-1 pr-4 text-gray-700">{{ $biasLabel }}</td>
+                                        <td class="py-1 pr-4 text-right text-gray-500">{{ $bias['days'] }}</td>
+                                        <td class="py-1 pr-4 text-right text-gray-700">{{ $bias['avg_stress'] === null ? '—' : number_format($bias['avg_stress'], 1) }}</td>
+                                        <td class="py-1 text-right text-gray-700">{{ $bias['avg_mental_capacity'] === null ? '—' : number_format($bias['avg_mental_capacity'], 1) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {{-- 入力のタイミング：夜のイベントが翌日ログに混ざっていないか --}}
+                <div class="mt-5 pt-5 border-t border-gray-100">
+                    <h4 class="text-sm font-medium text-gray-700 mb-1">入力のタイミング</h4>
+                    <p class="text-sm text-gray-600">
+                        当日入力 <span class="font-semibold text-gray-800">{{ $inputLag['same_day'] }}</span>件 /
+                        翌日入力 <span class="font-semibold text-gray-800">{{ $inputLag['next_day'] }}</span>件 /
+                        それ以降 <span class="font-semibold text-gray-800">{{ $inputLag['later'] }}</span>件
+                        @if ($inputLag['avg_hour'] !== null)
+                            <span class="ml-2 text-gray-500">
+                                平均 {{ number_format($inputLag['avg_hour'], 1) }}時（{{ $inputLag['timezone'] }} 基準）
+                            </span>
+                        @endif
+                    </p>
+                    <p class="mt-1 text-xs text-gray-400">
+                        翌日以降の入力は思い出して書いた数値です。夜に起きたことは翌日のログに混ざっている可能性があります。
+                    </p>
+                </div>
             </section>
 
             {{-- 相関 --}}
             <section class="bg-white rounded-lg border border-gray-200 p-6">
                 <h3 class="font-semibold text-gray-800 mb-1">指標間の相関</h3>
                 <p class="text-xs text-gray-400 mb-4">
-                    n は両方の項目が入力されている日数。n が 10 件程度では |r| が 0.55 を超えないと有意とは言えないため、
-                    太字以外は「傾向」として読んでください。
+                    n は両方の項目が入力されている日数。n の多い順に並べています。
+                    n が {{ \App\Services\AnalyticsService::RELIABLE_N }}件未満の行は「参考値」——
+                    偶然でこの値が出ることが十分あるため、傾向としてすら読まないでください。
                 </p>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -93,14 +146,97 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             @foreach ($correlations as $c)
-                                <tr>
-                                    <td class="py-2 pr-4 text-gray-700">{{ $c['x_label'] }} × {{ $c['y_label'] }}</td>
-                                    <td class="py-2 pr-4 text-right {{ $rClass($c['r']) }}">
+                                <tr class="{{ $c['reliable'] ? '' : 'text-gray-400' }}">
+                                    <td class="py-2 pr-4 {{ $c['reliable'] ? 'text-gray-700' : '' }}">
+                                        {{ $c['x_label'] }} × {{ $c['y_label'] }}
+                                        @unless ($c['reliable'])
+                                            <span class="ml-1 px-1.5 py-0.5 text-xs rounded bg-gray-100 text-gray-500">参考値</span>
+                                        @endunless
+                                    </td>
+                                    <td class="py-2 pr-4 text-right {{ $c['reliable'] ? $rClass($c['r']) : '' }}">
                                         {{ $c['r'] === null ? '—' : number_format($c['r'], 3) }}
                                     </td>
                                     <td class="py-2 text-right text-gray-400">
                                         入力済み {{ $c['n'] }}件
                                     </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            {{-- 重なりと個数（同日にいくつ重なったか） --}}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                @foreach ([
+                    ['title' => 'ストレス源の重なり', 'unit' => '件', 'rows' => $overlap,
+                     'note' => '同じ日に○がいくつ重なったか。件数が増えるほどメンタル余裕が落ちるなら、2件目を翌日に押し出すだけで効きます。'],
+                    ['title' => '頭の中のクセの個数', 'unit' => '個', 'rows' => $habitCount,
+                     'note' => '「特になし」は0個として数えています。個数がメンタル余裕の代わりに使えるかを見る欄です。'],
+                ] as $card)
+                    <section class="bg-white rounded-lg border border-gray-200 p-6">
+                        <h3 class="font-semibold text-gray-800 mb-1">{{ $card['title'] }}</h3>
+                        <p class="text-xs text-gray-400 mb-4">{{ $card['note'] }}</p>
+                        @if (empty($card['rows']))
+                            <p class="text-sm text-gray-400">この期間のデータはありません。</p>
+                        @else
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-sm">
+                                    <thead class="text-gray-500">
+                                        <tr>
+                                            <th class="py-2 pr-4 text-left font-normal">同じ日の数</th>
+                                            <th class="py-2 pr-4 text-right font-normal">日数</th>
+                                            <th class="py-2 pr-4 text-right font-normal">ストレス</th>
+                                            <th class="py-2 text-right font-normal">メンタル余裕</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        @foreach ($card['rows'] as $row)
+                                            <tr>
+                                                <td class="py-2 pr-4 text-gray-700">{{ $row['count'] }}{{ $card['unit'] }}</td>
+                                                <td class="py-2 pr-4 text-right text-gray-500">{{ $row['days'] }}</td>
+                                                <td class="py-2 pr-4 text-right text-gray-700">{{ $row['avg_stress'] === null ? '—' : number_format($row['avg_stress'], 1) }}</td>
+                                                <td class="py-2 text-right font-medium text-gray-800">{{ $row['avg_mental_capacity'] === null ? '—' : number_format($row['avg_mental_capacity'], 1) }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="mt-3 text-xs text-gray-400">日数の少ない行はたまたまその値になっている可能性があります。</p>
+                        @endif
+                    </section>
+                @endforeach
+            </div>
+
+            {{-- 自己相関（前日→翌日） --}}
+            <section class="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 class="font-semibold text-gray-800 mb-1">前日からの持ち越し</h3>
+                <p class="text-xs text-gray-400 mb-4">
+                    前日の数値が翌日にどれだけ残るか。連続して記録した日だけを組にして計算しています。
+                    r が大きい項目は「溜まる」ので守りに行く価値があり、小さい項目は毎日リセットされます。
+                </p>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="text-gray-500">
+                            <tr>
+                                <th class="py-2 pr-4 text-left font-normal">組み合わせ</th>
+                                <th class="py-2 pr-4 text-right font-normal">r</th>
+                                <th class="py-2 text-right font-normal">n</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach ($autocorrelations as $a)
+                                <tr class="{{ $a['reliable'] ? '' : 'text-gray-400' }}">
+                                    <td class="py-2 pr-4 {{ $a['reliable'] ? 'text-gray-700' : '' }}">
+                                        前日の{{ $a['x_label'] }} → 翌日の{{ $a['y_label'] }}
+                                        @unless ($a['reliable'])
+                                            <span class="ml-1 px-1.5 py-0.5 text-xs rounded bg-gray-100 text-gray-500">参考値</span>
+                                        @endunless
+                                    </td>
+                                    <td class="py-2 pr-4 text-right {{ $a['reliable'] ? $rClass($a['r']) : '' }}">
+                                        {{ $a['r'] === null ? '—' : number_format($a['r'], 3) }}
+                                    </td>
+                                    <td class="py-2 text-right text-gray-400">連続ペア {{ $a['n'] }}組</td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -176,10 +312,15 @@
                                     <span class="text-gray-700">{{ $r['label'] }}</span>
                                     <span class="text-right">
                                         <span class="font-medium text-gray-800">
-                                            {{ $r['avg_effect'] === null ? '効果 —' : '効果 '.number_format($r['avg_effect'], 1).'/10' }}
+                                            @if ($r['avg_effect'] === null)
+                                                効果 —
+                                            @else
+                                                {{ \App\Support\EffectLevels::nearestLabel($r['avg_effect']) }}
+                                                <span class="text-xs font-normal text-gray-400">（{{ number_format($r['avg_effect'], 1) }}/10）</span>
+                                            @endif
                                         </span>
                                         @if ($r['avg_duration'] !== null)
-                                            <span class="text-gray-500">/ {{ round($r['avg_duration']) }}分</span>
+                                            <span class="text-gray-500">/ 平均 {{ round($r['avg_duration']) }}分</span>
                                         @endif
                                         <span class="block text-xs text-gray-400">
                                             実施 {{ $r['days'] }}日 / 効果を入力済み {{ $r['effect_days'] }}日

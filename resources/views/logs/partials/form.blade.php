@@ -188,12 +188,11 @@
     @error('checklist') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
     @foreach ($categories as $category)
         <section class="bg-white rounded-lg border border-gray-200 p-6 space-y-3" data-category>
-            <h3 class="font-semibold text-gray-800">
-                {{ $category->name }}
-                @if ($category->code === 'thought_habit')
-                    <span class="text-xs text-red-500">（超重要）</span>
-                @endif
-            </h3>
+            <h3 class="font-semibold text-gray-800">{{ $category->name }}</h3>
+            @if ($category->description)
+                {{-- 説明文はマスタ側に持たせる（カテゴリ code をブレードに直書きしない） --}}
+                <p class="-mt-2 text-xs text-gray-500">{{ $category->description }}</p>
+            @endif
             @foreach ($category->options as $option)
                 @php
                     $checked = in_array($option->id, $selectedOptionIds);
@@ -217,26 +216,35 @@
                         @error("checklist_details.{$option->id}") <p class="ml-6 mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                     @endif
 
-                    {{-- 効果測定（tracks_effect のカテゴリのみ。選択したときだけ表示） --}}
-                    @if ($category->tracks_effect)
-                        <div class="mt-1 ml-6 flex flex-wrap items-center gap-4 {{ $checked ? '' : 'hidden' }}"
-                             data-effect-inputs>
-                            <label class="text-xs text-gray-500">
-                                所要時間
-                                <input type="number" name="selection_meta[{{ $option->id }}][duration_min]"
-                                       value="{{ old("selection_meta.{$option->id}.duration_min", $meta['duration_min'] ?? '') }}"
-                                       min="0" max="1440" step="5" placeholder="分"
-                                       class="ml-1 w-24 rounded-md border-gray-300 text-sm shadow-sm">
-                                <span class="ml-1">分</span>
-                            </label>
-                            <label class="text-xs text-gray-500">
-                                効いた感
-                                <input type="number" name="selection_meta[{{ $option->id }}][effect_score]"
-                                       value="{{ old("selection_meta.{$option->id}.effect_score", $meta['effect_score'] ?? '') }}"
-                                       min="0" max="10" step="1" placeholder="0-10"
-                                       class="ml-1 w-24 rounded-md border-gray-300 text-sm shadow-sm">
-                                <span class="ml-1">/ 10</span>
-                            </label>
+                    {{-- 効果測定（tracks_effect のカテゴリ・「特になし」以外。選択したときだけ表示） --}}
+                    @if ($category->tracks_effect && ! $option->is_none)
+                        @php
+                            $currentEffect = old("selection_meta.{$option->id}.effect_score", $meta['effect_score'] ?? null);
+                            $currentDuration = old("selection_meta.{$option->id}.duration_min", $meta['duration_min'] ?? null);
+                        @endphp
+                        <div class="mt-1 ml-6 space-y-1 {{ $checked ? '' : 'hidden' }}" data-effect-inputs>
+                            {{-- 既定値を置くと全件同じ値が入って分散が消えるため、初期選択は無し --}}
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span class="text-xs text-gray-500">効いた感</span>
+                                @foreach (\App\Support\EffectLevels::options() as $score => $levelLabel)
+                                    <label class="inline-flex items-center gap-1 text-xs text-gray-600">
+                                        <input type="radio" class="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                               name="selection_meta[{{ $option->id }}][effect_score]" value="{{ $score }}" @checked((string) $currentEffect === (string) $score)>
+                                        {{ $levelLabel }}
+                                    </label>
+                                @endforeach
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-xs text-gray-500">かけた時間</span>
+                                <select name="selection_meta[{{ $option->id }}][duration_min]"
+                                        class="rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">未選択</option>
+                                    @foreach (\App\Support\DurationBuckets::options() as $minutes => $bucketLabel)
+                                        <option value="{{ $minutes }}" @selected((string) $currentDuration === (string) $minutes)>{{ $bucketLabel }}</option>
+                                    @endforeach
+                                </select>
+                                <span class="text-xs text-gray-400">（任意）</span>
+                            </div>
                             @error("selection_meta.{$option->id}.duration_min") <p class="text-sm text-red-600">{{ $message }}</p> @enderror
                             @error("selection_meta.{$option->id}.effect_score") <p class="text-sm text-red-600">{{ $message }}</p> @enderror
                         </div>

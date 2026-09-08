@@ -36,6 +36,9 @@ class DashboardController extends Controller
             'recentStress' => $recentStress,
             'topHabits' => $topHabits,
             'sleepMental' => $sleepMental,
+            // 記録の継続が分析精度への一番の投資（report-202609.md §6）。
+            // 入力項目は増やさず、途切れていることだけ知らせる。
+            'coverage' => $this->analytics->coverage($user, $from, $to),
         ]);
     }
 }

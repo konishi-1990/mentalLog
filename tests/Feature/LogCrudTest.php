@@ -4,6 +4,8 @@ use App\Models\ChecklistOption;
 use App\Models\Log;
 use App\Models\Person;
 use App\Models\User;
+use App\Support\DurationBuckets;
+use App\Support\EffectLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
 
@@ -229,32 +231,49 @@ it('tracks_effect カテゴリの選択肢にだけ計測欄が描画される',
         ->assertDontSee("selection_meta[{$bodyReaction->id}]", false);
 });
 
-it('所要時間と効いた感が詳細画面に表示される', function () {
+it('所要時間と効いた感が詳細画面にラベルで表示される', function () {
     $user = User::factory()->create();
     $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
         ->where('label', '温泉・サウナ')->firstOrFail();
 
     $this->actingAs($user)->post(route('logs.store'), logPayload([
         'checklist' => [$option->id],
-        'selection_meta' => [$option->id => ['duration_min' => 90, 'effect_score' => 8]],
+        'selection_meta' => [$option->id => [
+            'duration_min' => 60,
+            'effect_score' => EffectLevels::STRONG,
+        ]],
     ]))->assertSessionHasNoErrors();
 
     $this->actingAs($user)->get(route('logs.show', Log::first()))
         ->assertOk()
-        ->assertSee('90分')
-        ->assertSee('効いた感 8');
+        ->assertSee('〜1時間')
+        ->assertSee('かなり効いた');
 });
 
-it('計測値が未入力の選択でも詳細画面が表示できる', function () {
+it('3段階以外の effect_score（旧データ）は詳細画面で数値表記にフォールバックする', function () {
     $user = User::factory()->create();
     $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
         ->where('label', '温泉・サウナ')->firstOrFail();
+    $log = Log::factory()->for($user)->create();
+    $log->checklistSelections()->create([
+        'checklist_option_id' => $option->id, 'duration_min' => 90, 'effect_score' => 7,
+    ]);
 
-    $this->actingAs($user)->post(route('logs.store'), logPayload([
-        'checklist' => [$option->id],
-    ]))->assertSessionHasNoErrors();
+    $this->actingAs($user)->get(route('logs.show', $log))
+        ->assertOk()
+        ->assertSee('90分')
+        ->assertSee('効いた感 7/10');
+});
 
-    $this->actingAs($user)->get(route('logs.show', Log::first()))
+it('計測値が未入力の選択でも詳細画面が表示できる（本番既存データ）', function () {
+    $user = User::factory()->create();
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+    // 効いた感の必須化より前に保存された28件はこの状態（duration_min / effect_score が NULL）
+    $log = Log::factory()->for($user)->create();
+    $log->checklistSelections()->create(['checklist_option_id' => $option->id]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))
         ->assertOk()
         ->assertSee('温泉・サウナ');
 });
@@ -266,12 +285,16 @@ it('編集画面に既存の計測値が反映される', function () {
 
     $this->actingAs($user)->post(route('logs.store'), logPayload([
         'checklist' => [$option->id],
-        'selection_meta' => [$option->id => ['duration_min' => 90, 'effect_score' => 8]],
-    ]));
+        'selection_meta' => [$option->id => [
+            'duration_min' => DurationBuckets::HOUR,
+            'effect_score' => EffectLevels::STRONG,
+        ]],
+    ]))->assertSessionHasNoErrors();
 
     $this->actingAs($user)->get(route('logs.edit', Log::first()))
         ->assertOk()
-        ->assertSee('value="90"', false);
+        ->assertSee('value="'.DurationBuckets::HOUR.'" selected', false)
+        ->assertSee('value="'.EffectLevels::STRONG.'" checked', false);
 });
 
 it('相手タグをログ作成フォームで選んで保存できる', function () {
@@ -333,4 +356,86 @@ it('編集画面に既存の相手タグ選択が反映される', function () {
     $this->actingAs($user)->get(route('logs.edit', $log))
         ->assertOk()
         ->assertSee('既存メモ');
+});
+
+it('3段階ボタンで選んだ効いた感が 2/5/8 で保存される', function (int $score) {
+    $user = User::factory()->create();
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($user)->post(route('logs.store'), logPayload([
+        'checklist' => [$option->id],
+        'selection_meta' => [$option->id => ['effect_score' => $score]],
+    ]))->assertSessionHasNoErrors();
+
+    $this->assertDatabaseHas('log_checklist_selections', [
+        'checklist_option_id' => $option->id,
+        'effect_score' => $score,
+    ]);
+})->with(EffectLevels::scores());
+
+it('効いた感は3段階ラジオで描画され、既定では何も選択されていない', function () {
+    $user = User::factory()->create();
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $response = $this->actingAs($user)->get(route('logs.create'));
+
+    $response->assertOk()
+        ->assertSee('効かなかった')
+        ->assertSee('少し効いた')
+        ->assertSee('かなり効いた');
+
+    foreach (EffectLevels::scores() as $score) {
+        $attrs = 'name="selection_meta['.$option->id.'][effect_score]" value="'.$score.'"';
+        $response->assertSee($attrs, false)
+            // 既定値を置くと全件同じ値が入って分散が消えるため、初期選択は無し
+            ->assertDontSee($attrs.' checked', false);
+    }
+});
+
+it('「何もできてない」には計測欄を描画しない', function () {
+    $user = User::factory()->create();
+    $none = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('is_none', true)->firstOrFail();
+
+    $this->actingAs($user)->get(route('logs.create'))
+        ->assertOk()
+        ->assertSee('何もできてない')
+        ->assertDontSee("selection_meta[{$none->id}]", false);
+});
+
+it('「何もできてない」は他の回復行動と同時選択できない', function () {
+    $user = User::factory()->create();
+    $none = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('is_none', true)->firstOrFail();
+    $onsen = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($user)->post(route('logs.store'), logPayload([
+        'checklist' => [$none->id, $onsen->id],
+        'selection_meta' => [$onsen->id => ['effect_score' => EffectLevels::SOME]],
+    ]))->assertSessionHasErrors('checklist');
+});
+
+it('所要時間は選択式で描画される（自由入力ではない）', function () {
+    $user = User::factory()->create();
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $response = $this->actingAs($user)->get(route('logs.create'))->assertOk();
+
+    foreach (DurationBuckets::options() as $minutes => $label) {
+        $response->assertSee($label);
+    }
+    $response->assertSee('name="selection_meta['.$option->id.'][duration_min]"', false);
+});
+
+it('カテゴリの説明文がフォームに表示される（摂取物への誘導）', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('logs.create'))
+        ->assertOk()
+        ->assertSee('コーヒー・お酒・薬はこちら')
+        ->assertSee('超重要');
 });

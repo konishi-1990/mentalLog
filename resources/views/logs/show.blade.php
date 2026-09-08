@@ -154,8 +154,9 @@
                                             @if ($s->duration_min !== null || $s->effect_score !== null)
                                                 <span class="ml-1 text-gray-500">
                                                     （{{ collect([
-                                                        $s->duration_min !== null ? $s->duration_min.'分' : null,
-                                                        $s->effect_score !== null ? '効いた感 '.$s->effect_score.'/10' : null,
+                                                        \App\Support\DurationBuckets::describe($s->duration_min),
+                                                        $s->effect_score === null ? null
+                                                            : '効いた感 '.\App\Support\EffectLevels::describe($s->effect_score),
                                                     ])->filter()->implode(' / ') }}）
                                                 </span>
                                             @endif

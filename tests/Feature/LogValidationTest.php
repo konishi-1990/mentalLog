@@ -2,6 +2,8 @@
 
 use App\Models\ChecklistOption;
 use App\Models\User;
+use App\Support\DurationBuckets;
+use App\Support\EffectLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
 
@@ -142,14 +144,127 @@ it('duration_min が負数だと422', function () {
         ->assertSessionHasErrors("selection_meta.{$option->id}.duration_min");
 });
 
-it('selection_meta が空でもエラーにならない（任意入力）', function () {
+it('所要時間は未選択でも保存できる（任意入力のまま）', function () {
     $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
         ->where('label', '温泉・サウナ')->firstOrFail();
 
     $this->actingAs($this->user)
         ->post(route('logs.store'), logPayload([
             'checklist' => [$option->id],
-            'selection_meta' => [$option->id => ['duration_min' => '', 'effect_score' => '']],
+            'selection_meta' => [$option->id => ['duration_min' => '', 'effect_score' => EffectLevels::SOME]],
+        ]))
+        ->assertSessionHasNoErrors();
+});
+
+it('回復行動を選んだのに「効いた感」が未入力だと422', function () {
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+        ]))
+        ->assertSessionHasErrors("selection_meta.{$option->id}.effect_score");
+});
+
+it('効いた感が空文字でも「未入力」として422', function () {
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+            'selection_meta' => [$option->id => ['effect_score' => '']],
+        ]))
+        ->assertSessionHasErrors("selection_meta.{$option->id}.effect_score");
+});
+
+it('is_none の回復行動（何もできてない）だけなら効いた感は不要', function () {
+    $none = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('is_none', true)->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$none->id],
+        ]))
+        ->assertSessionHasNoErrors();
+});
+
+it('tracks_effect でないカテゴリでは効いた感を要求しない', function (string $categoryCode) {
+    $option = ChecklistOption::whereRelation('category', 'code', $categoryCode)
+        ->where('is_none', false)->where('requires_text', false)->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+        ]))
+        ->assertSessionHasNoErrors();
+})->with(['thought_habit', 'body_reaction', 'intake']);
+
+it('効いた感は3段階の値だけを受け付ける', function (int $score) {
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+            'selection_meta' => [$option->id => ['effect_score' => $score]],
+        ]))
+        ->assertSessionHasNoErrors();
+})->with(EffectLevels::scores());
+
+it('効いた感が3段階以外の値だと422', function () {
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+            'selection_meta' => [$option->id => ['effect_score' => 7]],
+        ]))
+        ->assertSessionHasErrors("selection_meta.{$option->id}.effect_score");
+});
+
+it('所要時間は選択肢の値だけを受け付ける', function (int $minutes) {
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+            'selection_meta' => [$option->id => [
+                'duration_min' => $minutes,
+                'effect_score' => EffectLevels::SOME,
+            ]],
+        ]))
+        ->assertSessionHasNoErrors();
+})->with(DurationBuckets::minutes());
+
+it('所要時間が選択肢以外の値だと422', function () {
+    $option = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$option->id],
+            'selection_meta' => [$option->id => [
+                'duration_min' => 90,
+                'effect_score' => EffectLevels::SOME,
+            ]],
+        ]))
+        ->assertSessionHasErrors("selection_meta.{$option->id}.duration_min");
+});
+
+it('選択していない選択肢の selection_meta は検証されない', function () {
+    $selected = ChecklistOption::whereRelation('category', 'code', 'body_reaction')
+        ->where('label', 'イライラ')->firstOrFail();
+    $unselected = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '温泉・サウナ')->firstOrFail();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload([
+            'checklist' => [$selected->id],
+            'selection_meta' => [$unselected->id => ['effect_score' => '']],
         ]))
         ->assertSessionHasNoErrors();
 });

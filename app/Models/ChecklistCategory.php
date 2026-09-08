@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['code', 'name', 'sort_order', 'tracks_effect'])]
+#[Fillable(['code', 'name', 'description', 'sort_order', 'tracks_effect'])]
 class ChecklistCategory extends Model
 {
     protected function casts(): array
