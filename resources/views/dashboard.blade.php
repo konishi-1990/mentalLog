@@ -22,6 +22,20 @@
 
     <div class="py-8">
         <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+            {{-- 記録が途切れているときだけ促す。1件も無い初回利用時は出さない --}}
+            @if ($coverage['logged_days'] > 0 && $coverage['current_gap'] >= \App\Services\AnalyticsService::NUDGE_GAP_DAYS)
+                <div class="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4">
+                    <p class="text-sm text-amber-900">
+                        <span class="font-semibold">{{ $coverage['current_gap'] }}日続けて記録がありません。</span>
+                        書けなかった日ほど分析から抜け落ちて、平均が実態より軽く出ます。
+                        数値3つだけでも残しておくと後で読めます。
+                    </p>
+                    <a href="{{ route('logs.create') }}" class="mt-2 inline-block text-sm text-amber-800 underline">
+                        今日のログを書く
+                    </a>
+                </div>
+            @endif
+
             {{-- 直近14日の推移 --}}
             <section class="bg-white rounded-lg border border-gray-200 p-6">
                 <h3 class="font-semibold text-gray-800 mb-4">直近14日の推移</h3>

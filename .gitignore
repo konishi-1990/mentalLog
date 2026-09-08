@@ -26,3 +26,7 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# 分析レポートは自由記述・相手タグを含む個人データ。
+# 本リポジトリは public のためコミットしない（ローカル閲覧前提）。
+/docs/analysis

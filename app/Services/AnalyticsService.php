@@ -9,6 +9,7 @@ use App\Models\LogChecklistSelection;
 use App\Models\User;
 use App\Support\DayTypes;
 use Carbon\CarbonPeriod;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -29,6 +30,39 @@ class AnalyticsService
         ['controllability', 'stress'],
         ['controllability', 'mental_capacity'],
     ];
+
+    /**
+     * 前日→翌日で見る組み合わせ。
+     *
+     * ストレスは日ごとに独立（r=+0.08）／メンタル余裕は持ち越す（r=+0.46）という構造は
+     * 行動指針に直結するが、既存の correlations()（同日の相関）では出てこない。
+     * report-202609.md §2 ④ / §5 #4。
+     */
+    private const AUTOCORRELATION_PAIRS = [
+        ['mental_capacity', 'mental_capacity'],
+        ['stress', 'stress'],
+        ['stamina', 'stamina'],
+        ['stress', 'mental_capacity'],
+        ['carryover', 'mental_capacity'],
+    ];
+
+    /**
+     * 「参考値」ではなく素直に読んでよい有効件数の下限。
+     *
+     * n=28 で信頼できたのは ストレス×余裕 だけで、n≤13 は全部参考値だった（§2 ⑥）。
+     * この線を下回る行は画面側でバッジを付けて割り引いて読ませる。
+     */
+    public const RELIABLE_N = 10;
+
+    /**
+     * 個数集計の対象カテゴリ code。
+     */
+    private const THOUGHT_HABIT_CODE = 'thought_habit';
+
+    /**
+     * 未記録が何日続いたら促すか（ダッシュボードのバナー）。
+     */
+    public const NUDGE_GAP_DAYS = 3;
 
     /**
      * 指標の表示名。
@@ -89,6 +123,7 @@ class AnalyticsService
         return collect(self::CORRELATION_PAIRS)->map(function (array $pair) use ($row) {
             [$x, $y] = $pair;
             $r = $row?->{"r_{$x}_{$y}"};
+            $n = (int) ($row?->{"n_{$x}_{$y}"} ?? 0);
 
             return [
                 'key' => "{$x}_{$y}",
@@ -97,9 +132,221 @@ class AnalyticsService
                 'x_label' => self::METRIC_LABELS[$x],
                 'y_label' => self::METRIC_LABELS[$y],
                 'r' => $r === null ? null : round((float) $r, 3),
-                'n' => (int) ($row?->{"n_{$x}_{$y}"} ?? 0),
+                'n' => $n,
+                'reliable' => $n >= self::RELIABLE_N,
+            ];
+        })
+            // n が少ない参考値が上に並ぶとミスリードになる（§5 #5）。
+            // n の多い順、同じなら |r| の大きい順。
+            ->sort(fn (array $a, array $b) => [$b['n'], abs($b['r'] ?? 0)] <=> [$a['n'], abs($a['r'] ?? 0)])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * 自己相関：前日の指標と翌日の指標の相関係数と有効件数 n。
+     *
+     * 連続していない日（翌日のログが無い日）はペアに含めない。
+     *
+     * @return array<int, array{key:string, x:string, y:string, x_label:string, y_label:string, r:?float, n:int, reliable:bool}>
+     */
+    public function autocorrelations(User $user, ?string $from = null, ?string $to = null): array
+    {
+        $logs = $user->logs()
+            ->when($from, fn ($q, $v) => $q->whereDate('logged_on', '>=', $v))
+            ->when($to, fn ($q, $v) => $q->whereDate('logged_on', '<=', $v))
+            ->orderBy('logged_on')
+            ->get(['logged_on', 'stress', 'stamina', 'mental_capacity', 'carryover']);
+
+        $byDate = $logs->keyBy(fn ($log) => $log->logged_on->format('Y-m-d'));
+
+        return collect(self::AUTOCORRELATION_PAIRS)->map(function (array $pair) use ($logs, $byDate) {
+            [$x, $y] = $pair;
+
+            $xs = [];
+            $ys = [];
+
+            foreach ($logs as $log) {
+                $next = $byDate->get($log->logged_on->copy()->addDay()->format('Y-m-d'));
+
+                // 翌日のログが無い日／どちらかが未入力の日はペアにしない
+                if ($next === null || $log->{$x} === null || $next->{$y} === null) {
+                    continue;
+                }
+
+                $xs[] = (float) $log->{$x};
+                $ys[] = (float) $next->{$y};
+            }
+
+            $n = count($xs);
+
+            return [
+                'key' => "{$x}_next_{$y}",
+                'x' => $x,
+                'y' => $y,
+                'x_label' => self::METRIC_LABELS[$x],
+                'y_label' => self::METRIC_LABELS[$y],
+                'r' => $this->pearson($xs, $ys),
+                'n' => $n,
+                'reliable' => $n >= self::RELIABLE_N,
             ];
         })->all();
+    }
+
+    /**
+     * ストレス源の重なり：同日に○がついた件数ごとの日数と平均スコア（件数の昇順）。
+     *
+     * 単純頻度（checkItemFrequency）では「仕事が75%で常時ON」までしか分からず、
+     * 1件→2件でメンタル余裕が −1.93 落ちる閾値構造は見えない（§2 ① / §5 #1）。
+     * ○が0件の日を落とさないため、logs を起点に数える。
+     *
+     * @return array<int, array{count:int, days:int, avg_stress:?float, avg_mental_capacity:?float}>
+     */
+    public function stressSourceOverlap(User $user, ?string $from = null, ?string $to = null): array
+    {
+        return $this->groupByDailyCount(
+            $this->dailyCountQuery($user, $from, $to, <<<'SQL'
+                (select count(*)
+                   from log_check_item_values v
+                  where v.log_id = logs.id
+                    and v.is_on = true)::int as cnt
+            SQL),
+        );
+    }
+
+    /**
+     * 頭の中のクセの個数：同日に選んだ個数ごとの日数と平均スコア（個数の昇順）。
+     *
+     * ほぼ単調にメンタル余裕が落ちるため、余裕の代替指標として使える（§2 ② / §5 #2）。
+     * 「特になし」は 0個として数える。
+     *
+     * @return array<int, array{count:int, days:int, avg_stress:?float, avg_mental_capacity:?float}>
+     */
+    public function thoughtHabitCount(User $user, ?string $from = null, ?string $to = null): array
+    {
+        $code = self::THOUGHT_HABIT_CODE;
+
+        return $this->groupByDailyCount(
+            $this->dailyCountQuery($user, $from, $to, <<<SQL
+                (select count(*)
+                   from log_checklist_selections s
+                   join checklist_options o on o.id = s.checklist_option_id
+                   join checklist_categories c on c.id = o.category_id
+                  where s.log_id = logs.id
+                    and c.code = '{$code}'
+                    and o.is_none = false)::int as cnt
+            SQL),
+        );
+    }
+
+    /**
+     * 入力のタイミング：対象日に対していつ書いたかの内訳と平均入力時刻。
+     *
+     * 入力が夕方以降に寄っていると夜のイベントが翌日ログに混ざる（§3）。
+     * created_at はアプリのタイムゾーン基準なので、avg_hour には timezone を併記する。
+     *
+     * @return array{total:int, same_day:int, next_day:int, later:int, avg_hour:?float, timezone:string}
+     */
+    public function inputLag(User $user, ?string $from = null, ?string $to = null): array
+    {
+        $row = $user->logs()
+            ->when($from, fn ($q, $v) => $q->whereDate('logged_on', '>=', $v))
+            ->when($to, fn ($q, $v) => $q->whereDate('logged_on', '<=', $v))
+            ->select([
+                DB::raw('count(*)::int as total'),
+                DB::raw('count(*) filter (where created_at::date - logged_on = 0)::int as same_day'),
+                DB::raw('count(*) filter (where created_at::date - logged_on = 1)::int as next_day'),
+                // NULL の created_at も later に寄せて、3区分の合計が必ず total と一致するようにする
+                DB::raw('count(*) filter (where created_at is null or created_at::date - logged_on not in (0, 1))::int as later'),
+                DB::raw('avg(extract(hour from created_at) + extract(minute from created_at) / 60.0)::float as avg_hour'),
+            ])
+            ->first();
+
+        return [
+            'total' => (int) ($row?->total ?? 0),
+            'same_day' => (int) ($row?->same_day ?? 0),
+            'next_day' => (int) ($row?->next_day ?? 0),
+            'later' => (int) ($row?->later ?? 0),
+            'avg_hour' => $row?->avg_hour === null ? null : round((float) $row->avg_hour, 2),
+            'timezone' => (string) config('app.timezone'),
+        ];
+    }
+
+    /**
+     * 日次の「該当件数」を持つクエリ。groupByDailyCount() に渡す。
+     */
+    private function dailyCountQuery(User $user, ?string $from, ?string $to, string $countExpression): Builder
+    {
+        return Log::query()
+            ->where('user_id', $user->id)
+            ->when($from, fn ($q, $v) => $q->whereDate('logged_on', '>=', $v))
+            ->when($to, fn ($q, $v) => $q->whereDate('logged_on', '<=', $v))
+            ->select([
+                'logs.stress',
+                'logs.mental_capacity',
+                DB::raw($countExpression),
+            ]);
+    }
+
+    /**
+     * 件数ごとに日数と平均スコアを集計する（件数の昇順）。
+     *
+     * @return array<int, array{count:int, days:int, avg_stress:?float, avg_mental_capacity:?float}>
+     */
+    private function groupByDailyCount(Builder $daily): array
+    {
+        return DB::query()
+            ->fromSub($daily, 'd')
+            ->groupBy('cnt')
+            ->orderBy('cnt')
+            ->get([
+                'cnt',
+                DB::raw('count(*)::int as days'),
+                DB::raw('avg(stress)::float as avg_stress'),
+                DB::raw('avg(mental_capacity)::float as avg_mental_capacity'),
+            ])
+            ->map(fn ($row) => [
+                'count' => (int) $row->cnt,
+                'days' => (int) $row->days,
+                'avg_stress' => $this->round($row->avg_stress),
+                'avg_mental_capacity' => $this->round($row->avg_mental_capacity),
+            ])
+            ->all();
+    }
+
+    /**
+     * ピアソン相関係数。n<2 と分散ゼロでは定義できないため NULL を返す。
+     *
+     * @param  list<float>  $xs
+     * @param  list<float>  $ys
+     */
+    private function pearson(array $xs, array $ys): ?float
+    {
+        $n = count($xs);
+        if ($n < 2) {
+            return null;
+        }
+
+        $meanX = array_sum($xs) / $n;
+        $meanY = array_sum($ys) / $n;
+
+        $covariance = 0.0;
+        $varianceX = 0.0;
+        $varianceY = 0.0;
+
+        for ($i = 0; $i < $n; $i++) {
+            $dx = $xs[$i] - $meanX;
+            $dy = $ys[$i] - $meanY;
+            $covariance += $dx * $dy;
+            $varianceX += $dx ** 2;
+            $varianceY += $dy ** 2;
+        }
+
+        if ($varianceX === 0.0 || $varianceY === 0.0) {
+            return null;
+        }
+
+        return round($covariance / sqrt($varianceX * $varianceY), 3);
     }
 
     /**
@@ -199,23 +446,28 @@ class AnalyticsService
     }
 
     /**
-     * 記録率：期間の記録率・最長未記録連続日数・未記録日一覧。
+     * 記録率：期間の記録率・最長／直近の未記録連続日数・未記録日一覧・欠測バイアス。
      *
      * 欠測そのものを情報として扱う（入力項目は増やさない）。
      *
-     * @return array{total_days:int, logged_days:int, rate:float, longest_gap:int, missing_dates:list<string>, logged_dates:list<string>}
+     * bias は「翌日も記録した日」と「翌日が欠測だった日」のスコア平均。
+     * しんどい日の翌日に記録が飛んでいるため（§2 ⑨）、平均値をどれだけ割り引いて
+     * 読むべきかがこの2つの差で分かる。
+     *
+     * @return array{total_days:int, logged_days:int, rate:float, longest_gap:int, current_gap:int, missing_dates:list<string>, logged_dates:list<string>, bias:array{next_logged:array{days:int, avg_stress:?float, avg_mental_capacity:?float}, next_missing:array{days:int, avg_stress:?float, avg_mental_capacity:?float}}}
      */
     public function coverage(User $user, string $from, string $to): array
     {
-        $loggedDates = $user->logs()
+        $logs = $user->logs()
             ->whereDate('logged_on', '>=', $from)
             ->whereDate('logged_on', '<=', $to)
             ->orderBy('logged_on')
-            ->pluck('logged_on')
-            ->map(fn ($d) => $d->format('Y-m-d'))
-            ->all();
+            ->get(['logged_on', 'stress', 'mental_capacity']);
 
-        $logged = array_fill_keys($loggedDates, true);
+        $logged = [];
+        foreach ($logs as $log) {
+            $logged[$log->logged_on->format('Y-m-d')] = $log;
+        }
 
         $missing = [];
         $longestGap = 0;
@@ -244,8 +496,51 @@ class AnalyticsService
             'logged_days' => $loggedDays,
             'rate' => $totalDays === 0 ? 0.0 : round($loggedDays / $totalDays, 2),
             'longest_gap' => $longestGap,
+            // ループ終端の値がそのまま「期間末までの連続未記録日数」になる
+            'current_gap' => $currentGap,
             'missing_dates' => $missing,
             'logged_dates' => array_keys($logged),
+            'bias' => $this->missingBias($logs, $logged, $to),
+        ];
+    }
+
+    /**
+     * 欠測バイアス：翌日も記録した日／翌日が欠測だった日のスコア平均。
+     *
+     * 翌日が期間外になる最終日は判定できないため対象外。
+     *
+     * @param  Collection<int, Log>  $logs
+     * @param  array<string, Log>  $logged
+     * @return array{next_logged:array{days:int, avg_stress:?float, avg_mental_capacity:?float}, next_missing:array{days:int, avg_stress:?float, avg_mental_capacity:?float}}
+     */
+    private function missingBias(Collection $logs, array $logged, string $to): array
+    {
+        $nextLogged = [];
+        $nextMissing = [];
+
+        foreach ($logs as $log) {
+            $nextDate = $log->logged_on->copy()->addDay()->format('Y-m-d');
+
+            if ($nextDate > $to) {
+                continue; // 翌日が期間外の日は判定できない
+            }
+
+            if (isset($logged[$nextDate])) {
+                $nextLogged[] = $log;
+            } else {
+                $nextMissing[] = $log;
+            }
+        }
+
+        $summary = fn (array $rows): array => [
+            'days' => count($rows),
+            'avg_stress' => $this->round(collect($rows)->avg('stress')),
+            'avg_mental_capacity' => $this->round(collect($rows)->avg('mental_capacity')),
+        ];
+
+        return [
+            'next_logged' => $summary($nextLogged),
+            'next_missing' => $summary($nextMissing),
         ];
     }
 
@@ -285,6 +580,8 @@ class AnalyticsService
             ->join('checklist_categories', 'checklist_categories.id', '=', 'checklist_options.category_id')
             ->where('logs.user_id', $user->id)
             ->where('checklist_categories.tracks_effect', true)
+            // 「何もできてない」は効果を聞いていないので集計対象から外す
+            ->where('checklist_options.is_none', false)
             ->when($from, fn ($q, $v) => $q->whereDate('logs.logged_on', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('logs.logged_on', '<=', $v))
             ->groupBy('checklist_options.id', 'checklist_options.label')
