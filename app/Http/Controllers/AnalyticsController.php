@@ -37,6 +37,10 @@ class AnalyticsController extends Controller
             'dayTypes' => $this->analytics->dayTypeBreakdown($user, $from, $to),
             'recoveryEffect' => $this->analytics->recoveryEffect($user, $from, $to),
             'coverage' => $this->analytics->coverage($user, $from, $to),
+            'overlap' => $this->analytics->stressSourceOverlap($user, $from, $to),
+            'habitCount' => $this->analytics->thoughtHabitCount($user, $from, $to),
+            'autocorrelations' => $this->analytics->autocorrelations($user, $from, $to),
+            'inputLag' => $this->analytics->inputLag($user, $from, $to),
         ]);
     }
 }

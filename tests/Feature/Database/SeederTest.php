@@ -31,8 +31,25 @@ it('回復行動の「その他」は requires_text=true', function () {
         ->and($other->requires_text)->toBeTrue();
 });
 
-it('「特になし」相当（is_none=true）は3カテゴリに存在', function () {
-    expect(ChecklistOption::where('is_none', true)->count())->toBe(3);
+it('「特になし」相当（is_none=true）は4件', function () {
+    // クセ / 体の反応 / 摂取したもの の各「特になし」＋
+    // 回復行動の「何もできてない」（他の回復行動と排他かつ効果を聞かない）
+    expect(ChecklistOption::where('is_none', true)->count())->toBe(4);
+});
+
+it('回復行動の「何もできてない」は is_none=true', function () {
+    $nothing = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '何もできてない')->first();
+
+    expect($nothing)->not->toBeNull()
+        ->and($nothing->is_none)->toBeTrue();
+});
+
+it('カテゴリに説明文が投入される（摂取物への誘導）', function () {
+    expect(ChecklistCategory::where('code', 'intake')->value('description'))
+        ->toContain('回復行動ではなくこちら')
+        ->and(ChecklistCategory::where('code', 'thought_habit')->value('description'))
+        ->toContain('超重要');
 });
 
 it('摂取したものの「その他」は requires_text=true', function () {

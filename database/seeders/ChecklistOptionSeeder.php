@@ -33,7 +33,9 @@ class ChecklistOptionSeeder extends Seeder
                 ['label' => '音楽・バンド系'],
                 ['label' => '一人時間'],
                 ['label' => '軽い運動・散歩'],
-                ['label' => '何もできてない'],
+                // 実データでは他の回復行動と排他になっている（§2 ⑤）。is_none にすることで
+                // 排他ロジックが効き、同時に「効いた感」の必須化からも外れる。
+                ['label' => '何もできてない', 'is_none' => true],
                 ['label' => 'その他', 'requires_text' => true],
             ],
             // 回復行動に紛れていた飲酒・カフェインを切り出す（回復行動とは別物として測る）
