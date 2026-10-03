@@ -2,7 +2,10 @@
     // 良し悪しの向きは項目ごとに異なる（ストレスと持ち越し感は高いほど悪い）
     $scores = [
         'stress' => ['label' => 'ストレス', 'higher_is_better' => false],
-        'stamina' => ['label' => '体力', 'higher_is_better' => true],
+        // 体力は凍結（2026-10）。疲労度が無い過去ログだけ体力を出す
+        ...($log->fatigue === null && $log->stamina !== null
+            ? ['stamina' => ['label' => '体力', 'higher_is_better' => true]]
+            : ['fatigue' => ['label' => '疲労度', 'higher_is_better' => false]]),
         'mental_capacity' => ['label' => 'メンタル余裕', 'higher_is_better' => true],
     ];
     $extraScores = [
@@ -43,8 +46,12 @@
                     @foreach ($scores as $field => $meta)
                         <div>
                             <div class="text-sm text-gray-500 mb-2">{{ $meta['label'] }}</div>
-                            <span class="score-badge {{ $scoreClass($meta['higher_is_better'], $log->$field) }}">{{ $log->$field }}</span>
-                            <span class="text-gray-400 text-sm"> / 10</span>
+                            @if ($log->$field !== null)
+                                <span class="score-badge {{ $scoreClass($meta['higher_is_better'], $log->$field) }}">{{ $log->$field }}</span>
+                                <span class="text-gray-400 text-sm"> / 10</span>
+                            @else
+                                <span class="text-gray-400">—</span>
+                            @endif
                         </div>
                     @endforeach
                 </div>

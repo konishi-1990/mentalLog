@@ -23,6 +23,9 @@ class AnalyticsService
     private const CORRELATION_PAIRS = [
         ['stress', 'mental_capacity'],
         ['stamina', 'mental_capacity'],
+        // 体力の後継（2026-10〜）。体力の組は過去データ用に残す
+        ['fatigue', 'mental_capacity'],
+        ['fatigue', 'sleep_hours'],
         ['sleep_hours', 'mental_capacity'],
         ['sleep_hours', 'stamina'],
         ['sleep_quality', 'mental_capacity'],
@@ -43,6 +46,7 @@ class AnalyticsService
         ['mental_capacity', 'mental_capacity'],
         ['stress', 'stress'],
         ['stamina', 'stamina'],
+        ['fatigue', 'fatigue'],
         ['stress', 'mental_capacity'],
         ['carryover', 'mental_capacity'],
     ];
@@ -71,6 +75,7 @@ class AnalyticsService
     public const METRIC_LABELS = [
         'stress' => 'ストレス',
         'stamina' => '体力',
+        'fatigue' => '疲労度',
         'mental_capacity' => 'メンタル余裕',
         'sleep_hours' => '睡眠時間',
         'sleep_quality' => '睡眠の質',
@@ -91,12 +96,30 @@ class AnalyticsService
                 'logged_on',
                 'stress',
                 'stamina',
+                'fatigue',
                 'mental_capacity',
                 'sleep_hours',
                 'sleep_quality',
                 'carryover',
                 'controllability',
             ]);
+    }
+
+    /**
+     * 体力 → 疲労度に切り替わった日（期間内で最初に疲労度が入った日）。
+     *
+     * それより前に体力の記録が無ければ「切り替え」ではないので null。グラフの注記に使う。
+     */
+    public static function fatigueSwitchedOn(Collection $series): ?Carbon
+    {
+        $first = $series->first(fn ($log) => $log->fatigue !== null);
+        if (! $first) {
+            return null;
+        }
+
+        $hadStamina = $series->contains(fn ($log) => $log->stamina !== null && $log->logged_on->lt($first->logged_on));
+
+        return $hadStamina ? $first->logged_on : null;
     }
 
     /**
@@ -157,7 +180,7 @@ class AnalyticsService
             ->when($from, fn ($q, $v) => $q->whereDate('logged_on', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('logged_on', '<=', $v))
             ->orderBy('logged_on')
-            ->get(['logged_on', 'stress', 'stamina', 'mental_capacity', 'carryover']);
+            ->get(['logged_on', 'stress', 'stamina', 'fatigue', 'mental_capacity', 'carryover']);
 
         $byDate = $logs->keyBy(fn ($log) => $log->logged_on->format('Y-m-d'));
 
@@ -399,6 +422,7 @@ class AnalyticsService
                 DB::raw('count(*)::int as days'),
                 DB::raw('avg(stress)::float as avg_stress'),
                 DB::raw('avg(stamina)::float as avg_stamina'),
+                DB::raw('avg(fatigue)::float as avg_fatigue'),
                 DB::raw('avg(mental_capacity)::float as avg_mental_capacity'),
                 DB::raw('avg(sleep_hours)::float as avg_sleep_hours'),
                 DB::raw('count(sleep_hours)::int as sleep_days'),
@@ -413,6 +437,7 @@ class AnalyticsService
                 'days' => $row->days,
                 'avg_stress' => $this->round($row->avg_stress),
                 'avg_stamina' => $this->round($row->avg_stamina),
+                'avg_fatigue' => $this->round($row->avg_fatigue),
                 'avg_mental_capacity' => $this->round($row->avg_mental_capacity),
                 'avg_sleep_hours' => $this->round($row->avg_sleep_hours),
                 'sleep_days' => $row->sleep_days,

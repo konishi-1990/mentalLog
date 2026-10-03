@@ -2,12 +2,13 @@
 
 namespace Database\Factories;
 
+use App\Models\Log;
 use App\Models\User;
 use App\Support\DayTypes;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<\App\Models\Log>
+ * @extends Factory<Log>
  */
 class LogFactory extends Factory
 {
@@ -18,6 +19,7 @@ class LogFactory extends Factory
             'logged_on' => fake()->unique()->dateTimeBetween('-60 days', 'today')->format('Y-m-d'),
             'stress' => fake()->numberBetween(0, 10),
             'stamina' => fake()->numberBetween(0, 10),
+            'fatigue' => fake()->optional()->numberBetween(0, 10),
             'mental_capacity' => fake()->numberBetween(0, 10),
             'sleep_hours' => fake()->optional()->randomElement([4.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0]),
             'sleep_quality' => fake()->optional()->numberBetween(0, 10),

@@ -2,8 +2,6 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Carbon;
-
 /**
  * ストレス源の強度（log_check_item_values.severity）。
  *
@@ -22,7 +20,7 @@ class SeverityLevels
      * この日付以降のログでは、○の項目に強度を必須にする。
      * それより前のログ（過去ログの編集）は強度が無いまま保存できる。
      */
-    public const REQUIRED_FROM = '2026-10-05';
+    public const REQUIRED_FROM = FormRevision::SINCE;
 
     /**
      * @return array<int, string> 保存値 => 表示ラベル（表示順）
@@ -47,13 +45,5 @@ class SeverityLevels
     public static function label(?int $severity): ?string
     {
         return self::options()[$severity] ?? null;
-    }
-
-    /**
-     * 対象日のログで強度が必須か。
-     */
-    public static function requiredOn(string $loggedOn): bool
-    {
-        return Carbon::parse($loggedOn)->startOfDay()->gte(Carbon::parse(self::REQUIRED_FROM));
     }
 }

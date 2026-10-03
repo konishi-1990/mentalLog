@@ -83,3 +83,15 @@ it('ストレス源の強度が 1〜3 以外だと保存できない（CHECK制�
         'severity' => 4,
     ]);
 })->throws(QueryException::class);
+
+it('疲労度が範囲外(11)だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['fatigue' => 11]);
+})->throws(QueryException::class);
+
+it('体力は NULL で保存できる（凍結後の新規ログ）', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['stamina' => null]);
+
+    expect($log->fresh()->stamina)->toBeNull();
+});

@@ -6,6 +6,7 @@ use App\Models\ChecklistOption;
 use App\Support\DayTypes;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\FormRevision;
 use App\Support\SeverityLevels;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -26,7 +27,10 @@ class StoreLogRequest extends FormRequest
         return [
             'logged_on' => ['required', 'date'],
             'stress' => ['required', 'integer', 'between:0,10'],
-            'stamina' => ['required', 'integer', 'between:0,10'],
+            // 体力は凍結（過去ログ用に残す）。代わりに疲労度を必須にする（report-202610.md §2）
+            'stamina' => ['nullable', 'integer', 'between:0,10'],
+            // 改修前の日付のログ（過去ログの編集）では求めない
+            'fatigue' => [Rule::requiredIf(fn () => FormRevision::appliesTo($this->input('logged_on'))), 'nullable', 'integer', 'between:0,10'],
             'mental_capacity' => ['required', 'integer', 'between:0,10'],
 
             // フェーズ1で追加した項目。既存ログが未入力のため、いずれも任意。
@@ -115,7 +119,7 @@ class StoreLogRequest extends FormRequest
     private function validateSeverity(Validator $validator): void
     {
         $loggedOn = $this->input('logged_on');
-        if (blank($loggedOn) || $validator->errors()->has('logged_on') || ! SeverityLevels::requiredOn($loggedOn)) {
+        if (blank($loggedOn) || $validator->errors()->has('logged_on') || ! FormRevision::appliesTo($loggedOn)) {
             return;
         }
 
@@ -136,6 +140,7 @@ class StoreLogRequest extends FormRequest
             'logged_on' => '対象日',
             'stress' => 'ストレス',
             'stamina' => '体力',
+            'fatigue' => '疲労度',
             'mental_capacity' => 'メンタル余裕',
             'sleep_hours' => '睡眠時間',
             'sleep_quality' => '睡眠の質',

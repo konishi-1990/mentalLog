@@ -1000,3 +1000,25 @@ it('○×頻度：項目ごとの平均強度を返す（未入力は除く）',
 
     expect($this->service->checkItemFrequency($user)->firstWhere('id', $item->id)->avg_severity)->toBe(2.5);
 });
+
+it('疲労度：時系列・相関・自己相関・勤務形態別に含まれる', function () {
+    $user = User::factory()->create();
+    foreach (range(1, 4) as $i) {
+        Log::factory()->for($user)->create([
+            'logged_on' => "2026-07-0{$i}", 'fatigue' => $i * 2, 'mental_capacity' => 10 - $i * 2,
+            'sleep_hours' => 5 + $i, 'day_type' => 'weekday',
+        ]);
+    }
+
+    $keys = collect($this->service->correlations($user))->pluck('key');
+    $autoKeys = collect($this->service->autocorrelations($user))->pluck('key');
+
+    expect($this->service->timeSeries($user)->first()->fatigue)->toBe(2)
+        ->and($keys)->toContain('fatigue_mental_capacity')
+        ->and($keys)->toContain('fatigue_sleep_hours')
+        // 体力の組も過去データ用に残す
+        ->and($keys)->toContain('stamina_mental_capacity')
+        ->and($autoKeys)->toContain('fatigue_next_fatigue')
+        ->and(collect($this->service->dayTypeBreakdown($user))->first()['avg_fatigue'])->toBe(5.0)
+        ->and(AnalyticsService::METRIC_LABELS['fatigue'])->toBe('疲労度');
+});

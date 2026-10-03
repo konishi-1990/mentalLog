@@ -4,6 +4,7 @@ use App\Models\ChecklistOption;
 use App\Models\User;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\FormRevision;
 use App\Support\SeverityLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
@@ -317,6 +318,33 @@ it('必須化日より前のログ（過去ログの編集）では強度が無�
     $payload = severityPayload($this->user);
     $payload['logged_on'] = Carbon::parse(SeverityLevels::REQUIRED_FROM)
         ->subDay()->format('Y-m-d');
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), $payload)
+        ->assertSessionHasNoErrors();
+});
+
+it('疲労度が未入力だとエラー（体力に代わる必須項目・適用日以降のログ）', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['logged_on' => FormRevision::SINCE, 'fatigue' => null]))
+        ->assertSessionHasErrors('fatigue');
+});
+
+it('適用日より前のログ（過去ログの編集）は疲労度なしで保存できる', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['logged_on' => '2026-07-06', 'fatigue' => null]))
+        ->assertSessionHasNoErrors();
+});
+
+it('疲労度が範囲外だとエラー', function (int $fatigue) {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['fatigue' => $fatigue]))
+        ->assertSessionHasErrors('fatigue');
+})->with([-1, 11]);
+
+it('体力を送らなくても保存できる（凍結）', function () {
+    $payload = logPayload();
+    unset($payload['stamina']);
 
     $this->actingAs($this->user)
         ->post(route('logs.store'), $payload)

@@ -2,6 +2,8 @@
     $labels = $series->map(fn ($l) => $l->logged_on->format('m/d'))->values();
     $stress = $series->pluck('stress')->values();
     $stamina = $series->pluck('stamina')->values();
+    $fatigue = $series->pluck('fatigue')->values();
+    $fatigueSince = \App\Services\AnalyticsService::fatigueSwitchedOn($series);
     $mental = $series->pluck('mental_capacity')->values();
     $sleep = $series->pluck('sleep_hours')->map(fn ($v) => $v === null ? null : (float) $v)->values();
     $sleepDays = $series->whereNotNull('sleep_hours')->count();
@@ -50,6 +52,9 @@
                     <p class="text-sm text-gray-400">この期間のデータはありません。</p>
                 @else
                     <canvas id="seriesChart" height="80"></canvas>
+                    @if ($fatigueSince)
+                        <p class="mt-2 text-xs text-gray-400">{{ $fatigueSince->format('m/d') }} から体力 → 疲労度（高いと疲れている）に切り替えました。</p>
+                    @endif
                     <p class="mt-3 text-xs text-gray-400">
                         対象 {{ $series->count() }}件 / 睡眠時間の入力済み {{ $sleepDays }}件
                         （睡眠時間は右軸・時間）
@@ -268,7 +273,8 @@
                                     <th class="py-2 pr-4 text-left font-normal">勤務形態</th>
                                     <th class="py-2 pr-4 text-right font-normal">日数</th>
                                     <th class="py-2 pr-4 text-right font-normal">ストレス</th>
-                                    <th class="py-2 pr-4 text-right font-normal">体力</th>
+                                    <th class="py-2 pr-4 text-right font-normal">疲労度</th>
+                                    <th class="py-2 pr-4 text-right font-normal text-gray-400">体力（旧）</th>
                                     <th class="py-2 pr-4 text-right font-normal">メンタル余裕</th>
                                     <th class="py-2 pr-4 text-right font-normal">睡眠時間</th>
                                     <th class="py-2 text-right font-normal">持ち越し感</th>
@@ -280,7 +286,8 @@
                                         <td class="py-2 pr-4 text-gray-700">{{ $d['label'] }}</td>
                                         <td class="py-2 pr-4 text-right text-gray-500">{{ $d['days'] }}</td>
                                         <td class="py-2 pr-4 text-right text-gray-700">{{ $d['avg_stress'] === null ? '—' : number_format($d['avg_stress'], 1) }}</td>
-                                        <td class="py-2 pr-4 text-right text-gray-700">{{ $d['avg_stamina'] === null ? '—' : number_format($d['avg_stamina'], 1) }}</td>
+                                        <td class="py-2 pr-4 text-right text-gray-700">{{ $d['avg_fatigue'] === null ? '—' : number_format($d['avg_fatigue'], 1) }}</td>
+                                        <td class="py-2 pr-4 text-right text-gray-400">{{ $d['avg_stamina'] === null ? '—' : number_format($d['avg_stamina'], 1) }}</td>
                                         <td class="py-2 pr-4 text-right text-gray-700">{{ $d['avg_mental_capacity'] === null ? '—' : number_format($d['avg_mental_capacity'], 1) }}</td>
                                         <td class="py-2 pr-4 text-right text-gray-700">
                                             {{ $d['avg_sleep_hours'] === null ? '—' : number_format($d['avg_sleep_hours'], 1) }}
@@ -380,7 +387,8 @@
                         labels: @json($labels),
                         datasets: [
                             { label: 'ストレス', data: @json($stress), borderColor: '#e53e3e', tension: 0.3 },
-                            { label: '体力', data: @json($stamina), borderColor: '#38a169', tension: 0.3 },
+                            { label: '体力', data: @json($stamina), borderColor: '#38a169', borderDash: [2, 2], tension: 0.3 },
+                            { label: '疲労度', data: @json($fatigue), borderColor: '#dd6b20', tension: 0.3 },
                             { label: 'メンタル余裕', data: @json($mental), borderColor: '#3182ce', tension: 0.3 },
                             {
                                 label: '睡眠時間',

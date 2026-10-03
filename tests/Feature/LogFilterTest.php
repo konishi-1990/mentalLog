@@ -96,3 +96,15 @@ it('範囲外の絞り込み値はバリデーションエラー', function () {
         ->get(route('logs.index', ['stress_min' => 99]))
         ->assertSessionHasErrors('stress_min');
 });
+
+it('疲労度の min/max で絞り込める', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-01', 'fatigue' => 2, 'summary_text' => '軽い日']);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-02', 'fatigue' => 9, 'summary_text' => '重い日']);
+
+    $this->actingAs($user)
+        ->get(route('logs.index', ['fatigue_min' => 5]))
+        ->assertOk()
+        ->assertSee('重い日')
+        ->assertDontSee('軽い日');
+});

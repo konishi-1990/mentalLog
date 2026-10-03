@@ -303,3 +303,24 @@ it('強度合計カードが分析画面に出る', function () {
         ->assertOk()
         ->assertSee('ストレス源の強度合計');
 });
+
+it('グラフに疲労度の系列と、体力から切り替わった日の注記が出る', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-01', 'stamina' => 5, 'fatigue' => null]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-02', 'stamina' => null, 'fatigue' => 6]);
+
+    foreach ([route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31']), route('dashboard')] as $url) {
+        $this->actingAs($user)->get($url)
+            ->assertOk()
+            ->assertSee("label: '疲労度'", false)
+            ->assertSee('07/02 から体力 → 疲労度');
+    }
+})->travelTo('2026-07-10');
+
+it('疲労度が全件 NULL でも分析画面・ダッシュボードは 200 を返し、切り替え注記は出ない', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => now()->format('Y-m-d'), 'fatigue' => null]);
+
+    $this->actingAs($user)->get(route('analytics.index'))->assertOk()->assertDontSee('から体力 → 疲労度');
+    $this->actingAs($user)->get(route('dashboard'))->assertOk()->assertDontSee('から体力 → 疲労度');
+});

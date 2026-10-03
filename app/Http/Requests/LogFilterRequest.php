@@ -25,6 +25,8 @@ class LogFilterRequest extends FormRequest
             'stress_max' => $score,
             'stamina_min' => $score,
             'stamina_max' => $score,
+            'fatigue_min' => $score,
+            'fatigue_max' => $score,
             'mental_min' => $score,
             'mental_max' => $score,
             'user_id' => ['nullable', 'integer', 'exists:users,id'],

@@ -6,6 +6,7 @@ use App\Models\Person;
 use App\Models\User;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\FormRevision;
 use App\Support\SeverityLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
@@ -496,4 +497,61 @@ it('強度が NULL の○（過去ログ）でも詳細・編集画面が開け�
 
     $this->actingAs($user)->get(route('logs.show', $log))->assertOk();
     $this->actingAs($user)->get(route('logs.edit', $log))->assertOk();
+});
+
+it('作成フォームは疲労度を必須スライダーで描画し、体力は出さない', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('logs.create'))
+        ->assertOk()
+        ->assertSee(' name="fatigue"', false)
+        ->assertSee('疲労度')
+        ->assertDontSee('data-score-name="stamina"', false);
+});
+
+it('疲労度が詳細画面と一覧に出る', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['fatigue' => 9, 'stamina' => null]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk()->assertSee('疲労度');
+    $this->actingAs($user)->get(route('logs.index'))->assertOk()->assertSee('疲労度');
+});
+
+it('体力あり・疲労度なしの過去ログは詳細画面で体力を表示する', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['stamina' => 4, 'fatigue' => null]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))
+        ->assertOk()
+        ->assertSee('体力')
+        ->assertDontSee('疲労度');
+});
+
+it('疲労度ありの新しいログは詳細画面に体力を出さない', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['stamina' => null, 'fatigue' => 6]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))
+        ->assertOk()
+        ->assertDontSee('体力');
+});
+
+it('過去ログ（適用日より前）の編集画面では、疲労度は未入力のまま（触らなければ送信されない）', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['logged_on' => '2026-07-06', 'stamina' => 4, 'fatigue' => null]);
+
+    // 既定値 5 が当時の疲労度として保存されないようにする
+    $this->actingAs($user)->get(route('logs.edit', $log))
+        ->assertOk()
+        ->assertSee('data-score-name="fatigue"', false)
+        ->assertDontSee(' name="fatigue"', false);
+});
+
+it('適用日以降のログの編集画面では、疲労度は必須スライダー', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['logged_on' => FormRevision::SINCE, 'fatigue' => 6]);
+
+    $this->actingAs($user)->get(route('logs.edit', $log))
+        ->assertOk()
+        ->assertSee(' name="fatigue"', false);
 });

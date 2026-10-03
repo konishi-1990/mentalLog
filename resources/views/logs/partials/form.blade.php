@@ -10,9 +10,12 @@
     $personDetails = $personDetails ?? collect();
 
     $loggedOn = old('logged_on', $log?->logged_on?->format('Y-m-d') ?? now()->format('Y-m-d'));
+    // 体力は凍結し、疲労度に置き換えた（report-202610.md §2）。
+    // 改修前の日付のログを編集するときは疲労度を任意にし、既定値 5 が当時の値として入らないようにする。
+    $fatigueOptional = $log !== null && ! \App\Support\FormRevision::appliesTo($log->logged_on->format('Y-m-d'));
     $scores = [
         'stress' => ['label' => 'ストレス', 'default' => 5, 'hint' => '高いときつい'],
-        'stamina' => ['label' => '体力', 'default' => 5, 'hint' => '高いと元気'],
+        'fatigue' => ['label' => '疲労度', 'default' => 5, 'hint' => '高いと疲れている', 'optional' => $fatigueOptional],
         'mental_capacity' => ['label' => 'メンタル余裕', 'default' => 5, 'hint' => '高いと余裕あり'],
     ];
 
@@ -52,7 +55,8 @@
                 'key' => $key,
                 'label' => $meta['label'],
                 'hint' => $meta['hint'],
-                'current' => old($key, $log?->{$key} ?? $meta['default']),
+                'current' => old($key, $log?->{$key} ?? (($meta['optional'] ?? false) ? null : $meta['default'])),
+                'optional' => $meta['optional'] ?? false,
             ])
         @endforeach
         @foreach ($mainOptionalScores as $key => $meta)

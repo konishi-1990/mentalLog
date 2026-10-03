@@ -292,3 +292,26 @@ it('強度を送らなければ NULL で保存する（過去ログ・必須化�
 
     expect($log->checkItemValues()->first()->severity)->toBeNull();
 });
+
+it('疲労度を保存し、体力を送らなければ NULL にする', function () {
+    $user = User::factory()->create();
+    $payload = logPayload(['fatigue' => 7]);
+    unset($payload['stamina']);
+
+    $log = $this->service->upsertDailyLog($user, $payload);
+
+    expect($log->fatigue)->toBe(7)
+        ->and($log->stamina)->toBeNull();
+});
+
+it('体力を送らずに過去ログを更新しても、既存の体力は消さない（凍結した値を守る）', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-06', 'stamina' => 4, 'fatigue' => null]);
+    $payload = logPayload(['logged_on' => '2026-07-06', 'fatigue' => 6]);
+    unset($payload['stamina']);
+
+    $log = $this->service->upsertDailyLog($user, $payload);
+
+    expect($log->fresh()->stamina)->toBe(4)
+        ->and($log->fresh()->fatigue)->toBe(6);
+});
