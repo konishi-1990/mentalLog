@@ -57,7 +57,8 @@ function logPayload(array $overrides = []): array
     return array_merge([
         'logged_on' => '2026-07-06',
         'stress' => 5,
-        'stamina' => 6,
+        // 体力は凍結（2026-10）。必須は疲労度
+        'fatigue' => 4,
         'mental_capacity' => 7,
         'hardest_text' => '締切対応がきつかった',
         'summary_text' => 'なんとか乗り切った',

@@ -4,8 +4,11 @@ use App\Models\ChecklistOption;
 use App\Models\User;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\FormRevision;
+use App\Support\SeverityLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
+use Illuminate\Support\Carbon;
 
 beforeEach(function () {
     $this->seed([ChecklistCategorySeeder::class, ChecklistOptionSeeder::class]);
@@ -268,3 +271,94 @@ it('選択していない選択肢の selection_meta は検証されない', fun
         ]))
         ->assertSessionHasNoErrors();
 });
+
+/**
+ * 強度の必須化が効く日付（SeverityLevels::REQUIRED_FROM 以降）のペイロード。
+ * ○の項目を1つ持つ。
+ */
+function severityPayload(User $user, array $item = []): array
+{
+    $checkItem = $user->checkItems()->orderBy('sort_order')->first();
+
+    return logPayload([
+        'logged_on' => SeverityLevels::REQUIRED_FROM,
+        'check_items' => [$checkItem->id => array_merge(['is_on' => '1', 'detail_text' => '詳細'], $item)],
+    ]);
+}
+
+it('○の項目に強度が無いと 422（必須化日以降のログ）', function () {
+    $item = $this->user->checkItems()->orderBy('sort_order')->first();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), severityPayload($this->user))
+        ->assertSessionHasErrors("check_items.{$item->id}.severity");
+});
+
+it('○の項目に強度があれば保存できる', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), severityPayload($this->user, ['severity' => '2']))
+        ->assertSessionHasNoErrors();
+});
+
+it('✕の項目には強度を求めない', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), severityPayload($this->user, ['is_on' => '0']))
+        ->assertSessionHasNoErrors();
+});
+
+it('強度が 1〜3 以外なら 422', function (string $severity) {
+    $item = $this->user->checkItems()->orderBy('sort_order')->first();
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), severityPayload($this->user, ['severity' => $severity]))
+        ->assertSessionHasErrors("check_items.{$item->id}.severity");
+})->with(['0', '4', 'heavy']);
+
+it('必須化日より前のログ（過去ログの編集）では強度が無くても保存できる', function () {
+    $payload = severityPayload($this->user);
+    $payload['logged_on'] = Carbon::parse(SeverityLevels::REQUIRED_FROM)
+        ->subDay()->format('Y-m-d');
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), $payload)
+        ->assertSessionHasNoErrors();
+});
+
+it('疲労度が未入力だとエラー（体力に代わる必須項目・適用日以降のログ）', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['logged_on' => FormRevision::SINCE, 'fatigue' => null]))
+        ->assertSessionHasErrors('fatigue');
+});
+
+it('適用日より前のログ（過去ログの編集）は疲労度なしで保存できる', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['logged_on' => '2026-07-06', 'fatigue' => null]))
+        ->assertSessionHasNoErrors();
+});
+
+it('疲労度が範囲外だとエラー', function (int $fatigue) {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['fatigue' => $fatigue]))
+        ->assertSessionHasErrors('fatigue');
+})->with([-1, 11]);
+
+it('体力を送らなくても保存できる（凍結）', function () {
+    $payload = logPayload();
+    unset($payload['stamina']);
+
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), $payload)
+        ->assertSessionHasNoErrors();
+});
+
+it('起きたときの余裕は任意（未送信でも保存できる）', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload())
+        ->assertSessionHasNoErrors();
+});
+
+it('起きたときの余裕が範囲外だとエラー', function (int $value) {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['morning_capacity' => $value]))
+        ->assertSessionHasErrors('morning_capacity');
+})->with([-1, 11]);

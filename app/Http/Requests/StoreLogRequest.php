@@ -6,6 +6,8 @@ use App\Models\ChecklistOption;
 use App\Support\DayTypes;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\FormRevision;
+use App\Support\SeverityLevels;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -25,7 +27,10 @@ class StoreLogRequest extends FormRequest
         return [
             'logged_on' => ['required', 'date'],
             'stress' => ['required', 'integer', 'between:0,10'],
-            'stamina' => ['required', 'integer', 'between:0,10'],
+            // 体力は凍結（過去ログ用に残す）。代わりに疲労度を必須にする（report-202610.md §2）
+            'stamina' => ['nullable', 'integer', 'between:0,10'],
+            // 改修前の日付のログ（過去ログの編集）では求めない
+            'fatigue' => [Rule::requiredIf(fn () => FormRevision::appliesTo($this->input('logged_on'))), 'nullable', 'integer', 'between:0,10'],
             'mental_capacity' => ['required', 'integer', 'between:0,10'],
 
             // フェーズ1で追加した項目。既存ログが未入力のため、いずれも任意。
@@ -33,6 +38,7 @@ class StoreLogRequest extends FormRequest
             'sleep_quality' => ['nullable', 'integer', 'between:0,10'],
             'carryover' => ['nullable', 'integer', 'between:0,10'],
             'controllability' => ['nullable', 'integer', 'between:0,10'],
+            'morning_capacity' => ['nullable', 'integer', 'between:0,10'],
             'day_type' => ['nullable', Rule::in(DayTypes::codes())],
 
             'hardest_text' => ['nullable', 'string', 'max:2000'],
@@ -41,6 +47,8 @@ class StoreLogRequest extends FormRequest
             'check_items' => ['array'],
             'check_items.*.is_on' => ['nullable', 'boolean'],
             'check_items.*.detail_text' => ['nullable', 'string', 'max:1000'],
+            // ○のときの強度。必須かどうかは対象日で決まる（withValidator）
+            'check_items.*.severity' => ['nullable', 'integer', Rule::in(SeverityLevels::values())],
 
             'checklist' => ['array'],
             'checklist.*' => ['integer', Rule::exists('checklist_options', 'id')],
@@ -68,6 +76,8 @@ class StoreLogRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
+            $this->validateSeverity($validator);
+
             $ids = $this->input('checklist', []);
             if (empty($ids)) {
                 return;
@@ -104,6 +114,25 @@ class StoreLogRequest extends FormRequest
     }
 
     /**
+     * ○の項目は強度必須（効いた感と同じく「選んだときだけ」必須）。
+     * 必須化日より前のログは過去ログの編集なので求めない。
+     */
+    private function validateSeverity(Validator $validator): void
+    {
+        $loggedOn = $this->input('logged_on');
+        if (blank($loggedOn) || $validator->errors()->has('logged_on') || ! FormRevision::appliesTo($loggedOn)) {
+            return;
+        }
+
+        foreach ((array) $this->input('check_items', []) as $itemId => $val) {
+            $isOn = filter_var($val['is_on'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            if ($isOn && blank($val['severity'] ?? null)) {
+                $validator->errors()->add("check_items.{$itemId}.severity", '○にした項目の強度を選んでください。');
+            }
+        }
+    }
+
+    /**
      * @return array<string, string>
      */
     public function attributes(): array
@@ -112,14 +141,17 @@ class StoreLogRequest extends FormRequest
             'logged_on' => '対象日',
             'stress' => 'ストレス',
             'stamina' => '体力',
+            'fatigue' => '疲労度',
             'mental_capacity' => 'メンタル余裕',
             'sleep_hours' => '睡眠時間',
             'sleep_quality' => '睡眠の質',
             'carryover' => '前日からの持ち越し感',
             'controllability' => 'コントロール可能度',
+            'morning_capacity' => '起きたときの余裕',
             'day_type' => '勤務形態',
             'selection_meta.*.duration_min' => 'かけた時間',
             'selection_meta.*.effect_score' => '効いた感',
+            'check_items.*.severity' => '強度',
         ];
     }
 }

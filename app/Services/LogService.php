@@ -17,20 +17,28 @@ class LogService
     public function upsertDailyLog(User $user, array $data): Log
     {
         return DB::transaction(function () use ($user, $data) {
+            $attributes = [
+                'stress' => $data['stress'],
+                'fatigue' => $data['fatigue'] ?? null,
+                'mental_capacity' => $data['mental_capacity'],
+                'sleep_hours' => $data['sleep_hours'] ?? null,
+                'sleep_quality' => $data['sleep_quality'] ?? null,
+                'carryover' => $data['carryover'] ?? null,
+                'controllability' => $data['controllability'] ?? null,
+                'morning_capacity' => $data['morning_capacity'] ?? null,
+                'day_type' => $data['day_type'] ?? null,
+                'hardest_text' => $data['hardest_text'] ?? null,
+                'summary_text' => $data['summary_text'] ?? null,
+            ];
+            // 体力は凍結（フォームに出さない）。送られてこなければ既存値を残し、
+            // 過去ログを編集しても体力が NULL で上書きされないようにする。
+            if (array_key_exists('stamina', $data)) {
+                $attributes['stamina'] = $data['stamina'];
+            }
+
             $log = Log::updateOrCreate(
                 ['user_id' => $user->id, 'logged_on' => $data['logged_on']],
-                [
-                    'stress' => $data['stress'],
-                    'stamina' => $data['stamina'],
-                    'mental_capacity' => $data['mental_capacity'],
-                    'sleep_hours' => $data['sleep_hours'] ?? null,
-                    'sleep_quality' => $data['sleep_quality'] ?? null,
-                    'carryover' => $data['carryover'] ?? null,
-                    'controllability' => $data['controllability'] ?? null,
-                    'day_type' => $data['day_type'] ?? null,
-                    'hardest_text' => $data['hardest_text'] ?? null,
-                    'summary_text' => $data['summary_text'] ?? null,
-                ],
+                $attributes,
             );
 
             $this->syncCheckItemValues($user, $log, $data['check_items'] ?? []);
@@ -49,7 +57,9 @@ class LogService
     /**
      * ○×回答を置き換える。ユーザ自身の項目のみ受け付ける。
      *
-     * @param  array<int, array{is_on?: mixed, detail_text?: ?string}>  $checkItems
+     * ✕の項目は補足・強度を捨てる（○を外したときに古い値を残さない）。
+     *
+     * @param  array<int, array{is_on?: mixed, detail_text?: ?string, severity?: mixed}>  $checkItems
      */
     private function syncCheckItemValues(User $user, Log $log, array $checkItems): void
     {
@@ -68,6 +78,7 @@ class LogService
                 'check_item_id' => $checkItemId,
                 'is_on' => $isOn,
                 'detail_text' => $isOn ? ($val['detail_text'] ?? null) : null,
+                'severity' => $isOn ? $this->nullableInt($val['severity'] ?? null) : null,
             ]);
         }
     }

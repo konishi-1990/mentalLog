@@ -2,6 +2,8 @@
     $labels = $series->map(fn ($l) => $l->logged_on->format('m/d'))->values();
     $stress = $series->pluck('stress')->values();
     $stamina = $series->pluck('stamina')->values();
+    $fatigue = $series->pluck('fatigue')->values();
+    $fatigueSince = \App\Services\AnalyticsService::fatigueSwitchedOn($series);
     $mental = $series->pluck('mental_capacity')->values();
     $sleep = $series->pluck('sleep_hours')->map(fn ($v) => $v === null ? null : (float) $v)->values();
 @endphp
@@ -43,6 +45,9 @@
                     <p class="text-sm text-gray-400">まだデータがありません。ログを記録すると推移が表示されます。</p>
                 @else
                     <canvas id="trendChart" height="90"></canvas>
+                    @if ($fatigueSince)
+                        <p class="mt-2 text-xs text-gray-400">{{ $fatigueSince->format('m/d') }} から体力 → 疲労度（高いと疲れている）に切り替えました。</p>
+                    @endif
                 @endif
             </section>
 
@@ -102,7 +107,8 @@
                         labels: @json($labels),
                         datasets: [
                             { label: 'ストレス', data: @json($stress), borderColor: '#e53e3e', tension: 0.3 },
-                            { label: '体力', data: @json($stamina), borderColor: '#38a169', tension: 0.3 },
+                            { label: '体力', data: @json($stamina), borderColor: '#38a169', borderDash: [2, 2], tension: 0.3 },
+                            { label: '疲労度', data: @json($fatigue), borderColor: '#dd6b20', tension: 0.3 },
                             { label: 'メンタル余裕', data: @json($mental), borderColor: '#3182ce', tension: 0.3 },
                             {
                                 label: '睡眠時間',

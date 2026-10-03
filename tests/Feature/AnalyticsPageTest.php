@@ -246,3 +246,81 @@ it('ログが1件も無ければダッシュボードにバナーは出ない（
         ->assertOk()
         ->assertDontSee('日続けて記録がありません');
 });
+
+it('区切り日を指定すると期間比較カードが出る', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-05', 'stress' => 8]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-20', 'stress' => 4]);
+
+    $this->actingAs($user)
+        ->get(route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31', 'pivot' => '2026-07-15']))
+        ->assertOk()
+        ->assertSee('期間比較')
+        ->assertSee('8.0')
+        ->assertSee('4.0');
+});
+
+it('区切り日を指定しなければ期間比較カードは出ない', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31']))
+        ->assertOk()
+        ->assertDontSee('期間比較');
+});
+
+it('区切り日が日付でなければ 302（バリデーションエラー）', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('analytics.index', ['pivot' => 'not-a-date']))
+        ->assertSessionHasErrors('pivot');
+});
+
+it('頻度カードに「回数 / 選べた日数」が出る', function () {
+    $user = User::factory()->create();
+    $irritation = ChecklistOption::whereRelation('category', 'code', 'body_reaction')
+        ->where('label', 'イライラ')->first();
+    foreach (['2026-07-01', '2026-07-02', '2026-07-03'] as $d) {
+        $log = Log::factory()->for($user)->create(['logged_on' => $d]);
+        if ($d !== '2026-07-03') {
+            $log->checklistSelections()->create(['checklist_option_id' => $irritation->id]);
+        }
+    }
+    $irritation->forceFill(['created_at' => '2026-06-01 00:00:00'])->save();
+
+    $this->actingAs($user)
+        ->get(route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31']))
+        ->assertOk()
+        ->assertSee('2 / 3');
+});
+
+it('強度合計カードが分析画面に出る', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31']))
+        ->assertOk()
+        ->assertSee('ストレス源の強度合計');
+});
+
+it('グラフに疲労度の系列と、体力から切り替わった日の注記が出る', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-01', 'stamina' => 5, 'fatigue' => null]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-02', 'stamina' => null, 'fatigue' => 6]);
+
+    foreach ([route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31']), route('dashboard')] as $url) {
+        $this->actingAs($user)->get($url)
+            ->assertOk()
+            ->assertSee("label: '疲労度'", false)
+            ->assertSee('07/02 から体力 → 疲労度');
+    }
+})->travelTo('2026-07-10');
+
+it('疲労度が全件 NULL でも分析画面・ダッシュボードは 200 を返し、切り替え注記は出ない', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => now()->format('Y-m-d'), 'fatigue' => null]);
+
+    $this->actingAs($user)->get(route('analytics.index'))->assertOk()->assertDontSee('から体力 → 疲労度');
+    $this->actingAs($user)->get(route('dashboard'))->assertOk()->assertDontSee('から体力 → 疲労度');
+});

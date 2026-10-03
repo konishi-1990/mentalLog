@@ -15,9 +15,7 @@ use Illuminate\View\View;
 
 class LogController extends Controller
 {
-    public function __construct(private readonly LogService $logService)
-    {
-    }
+    public function __construct(private readonly LogService $logService) {}
 
     /**
      * 一覧＋絞り込み。一般ユーザは自分のみ、管理者は全件（ユーザ絞り込み可）。
@@ -44,6 +42,7 @@ class LogController extends Controller
         $ranges = [
             'stress' => ['stress_min', 'stress_max'],
             'stamina' => ['stamina_min', 'stamina_max'],
+            'fatigue' => ['fatigue_min', 'fatigue_max'],
             'mental_capacity' => ['mental_min', 'mental_max'],
         ];
         foreach ($ranges as $column => [$minKey, $maxKey]) {

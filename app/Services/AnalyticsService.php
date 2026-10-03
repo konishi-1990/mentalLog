@@ -8,6 +8,7 @@ use App\Models\LogCheckItemValue;
 use App\Models\LogChecklistSelection;
 use App\Models\User;
 use App\Support\DayTypes;
+use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -22,6 +23,9 @@ class AnalyticsService
     private const CORRELATION_PAIRS = [
         ['stress', 'mental_capacity'],
         ['stamina', 'mental_capacity'],
+        // 体力の後継（2026-10〜）。体力の組は過去データ用に残す
+        ['fatigue', 'mental_capacity'],
+        ['fatigue', 'sleep_hours'],
         ['sleep_hours', 'mental_capacity'],
         ['sleep_hours', 'stamina'],
         ['sleep_quality', 'mental_capacity'],
@@ -29,6 +33,8 @@ class AnalyticsService
         ['carryover', 'stress'],
         ['controllability', 'stress'],
         ['controllability', 'mental_capacity'],
+        // 同じ日の朝→夕方
+        ['morning_capacity', 'mental_capacity'],
     ];
 
     /**
@@ -42,8 +48,11 @@ class AnalyticsService
         ['mental_capacity', 'mental_capacity'],
         ['stress', 'stress'],
         ['stamina', 'stamina'],
+        ['fatigue', 'fatigue'],
         ['stress', 'mental_capacity'],
         ['carryover', 'mental_capacity'],
+        // 前日の夕方→翌朝。持ち越しを朝の時点で直接測る
+        ['mental_capacity', 'morning_capacity'],
     ];
 
     /**
@@ -70,11 +79,13 @@ class AnalyticsService
     public const METRIC_LABELS = [
         'stress' => 'ストレス',
         'stamina' => '体力',
+        'fatigue' => '疲労度',
         'mental_capacity' => 'メンタル余裕',
         'sleep_hours' => '睡眠時間',
         'sleep_quality' => '睡眠の質',
         'carryover' => '持ち越し感',
         'controllability' => 'コントロール可能度',
+        'morning_capacity' => '起きたときの余裕',
     ];
 
     /**
@@ -90,12 +101,31 @@ class AnalyticsService
                 'logged_on',
                 'stress',
                 'stamina',
+                'fatigue',
                 'mental_capacity',
                 'sleep_hours',
                 'sleep_quality',
                 'carryover',
                 'controllability',
+                'morning_capacity',
             ]);
+    }
+
+    /**
+     * 体力 → 疲労度に切り替わった日（期間内で最初に疲労度が入った日）。
+     *
+     * それより前に体力の記録が無ければ「切り替え」ではないので null。グラフの注記に使う。
+     */
+    public static function fatigueSwitchedOn(Collection $series): ?Carbon
+    {
+        $first = $series->first(fn ($log) => $log->fatigue !== null);
+        if (! $first) {
+            return null;
+        }
+
+        $hadStamina = $series->contains(fn ($log) => $log->stamina !== null && $log->logged_on->lt($first->logged_on));
+
+        return $hadStamina ? $first->logged_on : null;
     }
 
     /**
@@ -156,7 +186,7 @@ class AnalyticsService
             ->when($from, fn ($q, $v) => $q->whereDate('logged_on', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('logged_on', '<=', $v))
             ->orderBy('logged_on')
-            ->get(['logged_on', 'stress', 'stamina', 'mental_capacity', 'carryover']);
+            ->get(['logged_on', 'stress', 'stamina', 'fatigue', 'mental_capacity', 'carryover', 'morning_capacity']);
 
         $byDate = $logs->keyBy(fn ($log) => $log->logged_on->format('Y-m-d'));
 
@@ -197,7 +227,8 @@ class AnalyticsService
      * ストレス源の重なり：同日に○がついた件数ごとの日数と平均スコア（件数の昇順）。
      *
      * 単純頻度（checkItemFrequency）では「仕事が75%で常時ON」までしか分からず、
-     * 1件→2件でメンタル余裕が −1.93 落ちる閾値構造は見えない（§2 ① / §5 #1）。
+     * 重なるほどメンタル余裕が下がる構造は見えない（report-202609.md §2 ① / §5 #1）。
+     * 28件時点では「1件→2件で崖」に見えたが、48件では単調な減少だった（report-202610.md §3 ①）。
      * ○が0件の日を落とさないため、logs を起点に数える。
      *
      * @return array<int, array{count:int, days:int, avg_stress:?float, avg_mental_capacity:?float}>
@@ -211,6 +242,32 @@ class AnalyticsService
                   where v.log_id = logs.id
                     and v.is_on = true)::int as cnt
             SQL),
+        );
+    }
+
+    /**
+     * ストレス源の強度合計：同日の○の強度（1〜3）の合計ごとの日数と平均スコア（合計の昇順）。
+     *
+     * 重なり数（stressSourceOverlap）の重み付け版。○が0件の日は合計0として含める。
+     * 強度が未入力の○を含む日（強度導入前の過去ログ）は合計が小さく出てしまうため外す。
+     *
+     * @return array<int, array{load:int, days:int, avg_stress:?float, avg_mental_capacity:?float}>
+     */
+    public function stressSourceLoad(User $user, ?string $from = null, ?string $to = null): array
+    {
+        $daily = $this->dailyCountQuery($user, $from, $to, <<<'SQL'
+            (select coalesce(sum(v.severity), 0)
+               from log_check_item_values v
+              where v.log_id = logs.id
+                and v.is_on = true)::int as cnt
+        SQL)->whereNotExists(fn ($q) => $q->from('log_check_item_values as v')
+            ->whereColumn('v.log_id', 'logs.id')
+            ->where('v.is_on', true)
+            ->whereNull('v.severity'));
+
+        return array_map(
+            fn (array $row) => ['load' => $row['count']] + array_diff_key($row, ['count' => true]),
+            $this->groupByDailyCount($daily),
         );
     }
 
@@ -371,6 +428,7 @@ class AnalyticsService
                 DB::raw('count(*)::int as days'),
                 DB::raw('avg(stress)::float as avg_stress'),
                 DB::raw('avg(stamina)::float as avg_stamina'),
+                DB::raw('avg(fatigue)::float as avg_fatigue'),
                 DB::raw('avg(mental_capacity)::float as avg_mental_capacity'),
                 DB::raw('avg(sleep_hours)::float as avg_sleep_hours'),
                 DB::raw('count(sleep_hours)::int as sleep_days'),
@@ -385,6 +443,7 @@ class AnalyticsService
                 'days' => $row->days,
                 'avg_stress' => $this->round($row->avg_stress),
                 'avg_stamina' => $this->round($row->avg_stamina),
+                'avg_fatigue' => $this->round($row->avg_fatigue),
                 'avg_mental_capacity' => $this->round($row->avg_mental_capacity),
                 'avg_sleep_hours' => $this->round($row->avg_sleep_hours),
                 'sleep_days' => $row->sleep_days,
@@ -403,30 +462,47 @@ class AnalyticsService
 
     /**
      * ○×頻度：○（is_on=true）の回数を項目ごとに集計（多い順）。
+     *
+     * answered_days は×も含めて回答した日数。○×は毎回すべての項目に回答が残るため、
+     * 途中で追加した項目でもこれがそのまま「選べた日数」になる。
      */
     public function checkItemFrequency(User $user, ?string $from = null, ?string $to = null): Collection
     {
+        $onCount = 'count(*) filter (where log_check_item_values.is_on)';
+
         return LogCheckItemValue::query()
             ->join('logs', 'logs.id', '=', 'log_check_item_values.log_id')
             ->join('check_items', 'check_items.id', '=', 'log_check_item_values.check_item_id')
             ->where('logs.user_id', $user->id)
-            ->where('log_check_item_values.is_on', true)
             ->when($from, fn ($q, $v) => $q->whereDate('logs.logged_on', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('logs.logged_on', '<=', $v))
             ->groupBy('check_items.id', 'check_items.name')
-            ->orderByDesc(DB::raw('count(*)'))
+            ->havingRaw("{$onCount} > 0")
+            ->orderByDesc(DB::raw($onCount))
             ->get([
                 'check_items.id',
                 'check_items.name',
-                DB::raw('count(*)::int as total'),
-            ]);
+                DB::raw("{$onCount}::int as total"),
+                DB::raw('count(*)::int as answered_days'),
+                // 強度未入力（導入前の過去ログ）は avg が自然に除外する
+                DB::raw('avg(log_check_item_values.severity) filter (where log_check_item_values.is_on)::float as avg_severity'),
+            ])
+            ->each(function ($row) {
+                // PDO は float を文字列で返すため数値に戻す
+                $row->avg_severity = $this->round($row->avg_severity);
+            });
     }
 
     /**
      * チェック頻度：選択回数を選択肢ごとに集計（多い順）。任意でカテゴリ絞り込み。
+     *
+     * available_days は「選択肢を追加した日以降の記録日数」＝選べた日数。
+     * 途中で追加した選択肢を全期間の記録日数で割ると過小に見えるため（report-202610.md §5 #4）。
      */
     public function checklistFrequency(User $user, ?string $from = null, ?string $to = null, ?string $categoryCode = null): Collection
     {
+        $available = $this->availableDaysSql($from, $to);
+
         return LogChecklistSelection::query()
             ->join('logs', 'logs.id', '=', 'log_checklist_selections.log_id')
             ->join('checklist_options', 'checklist_options.id', '=', 'log_checklist_selections.checklist_option_id')
@@ -435,14 +511,143 @@ class AnalyticsService
             ->when($from, fn ($q, $v) => $q->whereDate('logs.logged_on', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('logs.logged_on', '<=', $v))
             ->when($categoryCode, fn ($q, $v) => $q->where('checklist_categories.code', $v))
-            ->groupBy('checklist_options.id', 'checklist_options.label', 'checklist_categories.name')
+            ->groupBy('checklist_options.id', 'checklist_options.label', 'checklist_options.created_at', 'checklist_categories.name')
             ->orderByDesc(DB::raw('count(*)'))
-            ->get([
+            ->select([
                 'checklist_options.id',
                 'checklist_options.label',
                 'checklist_categories.name as category_name',
                 DB::raw('count(*)::int as total'),
-            ]);
+            ])
+            ->selectRaw("{$available['sql']} as available_days", [$user->id, ...$available['bindings']])
+            ->get()
+            ->each(function ($row) {
+                $row->rate = $row->available_days > 0 ? round($row->total / $row->available_days, 2) : null;
+            });
+    }
+
+    /**
+     * 選択肢ごとの「選べた日数」を数える相関サブクエリ（checklist_options を外側に持つ前提）。
+     * 先頭のバインドは user_id。
+     *
+     * @return array{sql:string, bindings:list<string>}
+     */
+    private function availableDaysSql(?string $from, ?string $to): array
+    {
+        $sql = '(select count(*) from logs l2 where l2.user_id = ? and l2.logged_on >= checklist_options.created_at::date';
+        $bindings = [];
+        if ($from) {
+            $sql .= ' and l2.logged_on >= ?';
+            $bindings[] = $from;
+        }
+        if ($to) {
+            $sql .= ' and l2.logged_on <= ?';
+            $bindings[] = $to;
+        }
+
+        return ['sql' => $sql.')::int', 'bindings' => $bindings];
+    }
+
+    /**
+     * 期間比較：区切り日の前（from〜pivot前日）と後（pivot〜to）を並べる。
+     *
+     * ライフイベントの前後で何が変わったかを見るための切り口（report-202610.md §3 ⑤）。
+     * ○率は「○ / 回答日数」、クセの選択率は「選んだ日 / 選択肢の追加日以降の記録日数」。
+     * 分母が0の側は null を返す（選べなかった期間を 0% と区別するため）。
+     *
+     * @return array{pivot:string, before:array<string, mixed>, after:array<string, mixed>, check_items:list<array{name:string, before_rate:?float, after_rate:?float}>, thought_habits:list<array{label:string, before_rate:?float, after_rate:?float}>}
+     */
+    public function periodComparison(User $user, string $from, string $to, string $pivot): array
+    {
+        $pivotDate = Carbon::parse($pivot)->startOfDay();
+        $ranges = [
+            'before' => [Carbon::parse($from)->startOfDay(), $pivotDate->copy()->subDay()],
+            'after' => [$pivotDate->copy(), Carbon::parse($to)->startOfDay()],
+        ];
+
+        $logs = $user->logs()
+            ->whereDate('logged_on', '>=', $from)
+            ->whereDate('logged_on', '<=', $to)
+            ->with(['checkItemValues.checkItem', 'checklistSelections.option.category'])
+            ->get();
+        [$before, $after] = $logs->partition(fn (Log $log) => $log->logged_on->lt($pivotDate));
+        $sides = ['before' => $before, 'after' => $after];
+
+        $result = ['pivot' => $pivotDate->format('Y-m-d')];
+        foreach ($ranges as $key => [$start, $end]) {
+            $result[$key] = $this->periodSummary($sides[$key], $start, $end);
+        }
+
+        // ストレス源：○ / 回答日数
+        $itemNames = $logs->flatMap->checkItemValues->map(fn ($v) => $v->checkItem->name)->unique()->values();
+        $result['check_items'] = $itemNames->map(function (string $name) use ($sides) {
+            $row = ['name' => $name];
+            foreach ($sides as $key => $sideLogs) {
+                $values = $sideLogs->flatMap->checkItemValues->filter(fn ($v) => $v->checkItem->name === $name);
+                $row["{$key}_rate"] = $this->ratio($values->where('is_on', true)->count(), $values->count());
+            }
+
+            return $row;
+        })->all();
+
+        // クセ：選んだ日 / 選択肢の追加日以降の記録日数（「特になし」は除く）
+        $habits = $logs->flatMap->checklistSelections
+            ->map->option
+            ->filter(fn ($o) => $o->category->code === self::THOUGHT_HABIT_CODE && ! $o->is_none)
+            ->unique('id')
+            ->sortBy('sort_order')
+            ->values();
+        $result['thought_habits'] = $habits->map(function (ChecklistOption $option) use ($sides) {
+            $row = ['label' => $option->label];
+            $addedOn = $option->created_at->copy()->startOfDay();
+            foreach ($sides as $key => $sideLogs) {
+                $available = $sideLogs->filter(fn (Log $log) => $log->logged_on->gte($addedOn));
+                $chosen = $available->filter(fn (Log $log) => $log->checklistSelections->contains('checklist_option_id', $option->id));
+                $row["{$key}_rate"] = $this->ratio($chosen->count(), $available->count());
+            }
+
+            return $row;
+        })->all();
+
+        return $result;
+    }
+
+    /**
+     * 期間比較の片側：暦日数・記録日数・記録率・各指標の平均・「何もできてない」の割合。
+     *
+     * @param  Collection<int, Log>  $logs
+     * @return array{from:string, to:string, total_days:int, logged_days:int, rate:?float, avg:array<string, ?float>, no_recovery_rate:?float}
+     */
+    private function periodSummary(Collection $logs, Carbon $start, Carbon $end): array
+    {
+        $totalDays = $start->lte($end) ? (int) $start->diffInDays($end) + 1 : 0;
+
+        $avg = [];
+        foreach (array_keys(self::METRIC_LABELS) as $metric) {
+            $avg[$metric] = $this->round($logs->pluck($metric)->filter(fn ($v) => $v !== null)->avg());
+        }
+
+        // 効果測定カテゴリ（回復行動）の is_none ＝「何もできてない」
+        $noRecovery = $logs->filter(fn (Log $log) => $log->checklistSelections
+            ->contains(fn ($s) => $s->option->is_none && $s->option->category->tracks_effect));
+
+        return [
+            'from' => $start->format('Y-m-d'),
+            'to' => $end->format('Y-m-d'),
+            'total_days' => $totalDays,
+            'logged_days' => $logs->count(),
+            'rate' => $this->ratio($logs->count(), $totalDays),
+            'avg' => $avg,
+            'no_recovery_rate' => $this->ratio($noRecovery->count(), $logs->count()),
+        ];
+    }
+
+    /**
+     * 割合（小数2桁）。分母が0なら null。
+     */
+    private function ratio(int $numerator, int $denominator): ?float
+    {
+        return $denominator === 0 ? null : round($numerator / $denominator, 2);
     }
 
     /**
