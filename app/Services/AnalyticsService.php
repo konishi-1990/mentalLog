@@ -217,6 +217,32 @@ class AnalyticsService
     }
 
     /**
+     * ストレス源の強度合計：同日の○の強度（1〜3）の合計ごとの日数と平均スコア（合計の昇順）。
+     *
+     * 重なり数（stressSourceOverlap）の重み付け版。○が0件の日は合計0として含める。
+     * 強度が未入力の○を含む日（強度導入前の過去ログ）は合計が小さく出てしまうため外す。
+     *
+     * @return array<int, array{load:int, days:int, avg_stress:?float, avg_mental_capacity:?float}>
+     */
+    public function stressSourceLoad(User $user, ?string $from = null, ?string $to = null): array
+    {
+        $daily = $this->dailyCountQuery($user, $from, $to, <<<'SQL'
+            (select coalesce(sum(v.severity), 0)
+               from log_check_item_values v
+              where v.log_id = logs.id
+                and v.is_on = true)::int as cnt
+        SQL)->whereNotExists(fn ($q) => $q->from('log_check_item_values as v')
+            ->whereColumn('v.log_id', 'logs.id')
+            ->where('v.is_on', true)
+            ->whereNull('v.severity'));
+
+        return array_map(
+            fn (array $row) => ['load' => $row['count']] + array_diff_key($row, ['count' => true]),
+            $this->groupByDailyCount($daily),
+        );
+    }
+
+    /**
      * 頭の中のクセの個数：同日に選んだ個数ごとの日数と平均スコア（個数の昇順）。
      *
      * ほぼ単調にメンタル余裕が落ちるため、余裕の代替指標として使える（§2 ② / §5 #2）。
@@ -427,7 +453,13 @@ class AnalyticsService
                 'check_items.name',
                 DB::raw("{$onCount}::int as total"),
                 DB::raw('count(*)::int as answered_days'),
-            ]);
+                // 強度未入力（導入前の過去ログ）は avg が自然に除外する
+                DB::raw('avg(log_check_item_values.severity) filter (where log_check_item_values.is_on)::float as avg_severity'),
+            ])
+            ->each(function ($row) {
+                // PDO は float を文字列で返すため数値に戻す
+                $row->avg_severity = $this->round($row->avg_severity);
+            });
     }
 
     /**

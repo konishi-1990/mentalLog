@@ -294,3 +294,12 @@ it('頻度カードに「回数 / 選べた日数」が出る', function () {
         ->assertOk()
         ->assertSee('2 / 3');
 });
+
+it('強度合計カードが分析画面に出る', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('analytics.index', ['from' => '2026-07-01', 'to' => '2026-07-31']))
+        ->assertOk()
+        ->assertSee('ストレス源の強度合計');
+});

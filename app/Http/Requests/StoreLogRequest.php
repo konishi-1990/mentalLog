@@ -6,6 +6,7 @@ use App\Models\ChecklistOption;
 use App\Support\DayTypes;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\SeverityLevels;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -41,6 +42,8 @@ class StoreLogRequest extends FormRequest
             'check_items' => ['array'],
             'check_items.*.is_on' => ['nullable', 'boolean'],
             'check_items.*.detail_text' => ['nullable', 'string', 'max:1000'],
+            // ○のときの強度。必須かどうかは対象日で決まる（withValidator）
+            'check_items.*.severity' => ['nullable', 'integer', Rule::in(SeverityLevels::values())],
 
             'checklist' => ['array'],
             'checklist.*' => ['integer', Rule::exists('checklist_options', 'id')],
@@ -68,6 +71,8 @@ class StoreLogRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
+            $this->validateSeverity($validator);
+
             $ids = $this->input('checklist', []);
             if (empty($ids)) {
                 return;
@@ -104,6 +109,25 @@ class StoreLogRequest extends FormRequest
     }
 
     /**
+     * ○の項目は強度必須（効いた感と同じく「選んだときだけ」必須）。
+     * 必須化日より前のログは過去ログの編集なので求めない。
+     */
+    private function validateSeverity(Validator $validator): void
+    {
+        $loggedOn = $this->input('logged_on');
+        if (blank($loggedOn) || $validator->errors()->has('logged_on') || ! SeverityLevels::requiredOn($loggedOn)) {
+            return;
+        }
+
+        foreach ((array) $this->input('check_items', []) as $itemId => $val) {
+            $isOn = filter_var($val['is_on'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            if ($isOn && blank($val['severity'] ?? null)) {
+                $validator->errors()->add("check_items.{$itemId}.severity", '○にした項目の強度を選んでください。');
+            }
+        }
+    }
+
+    /**
      * @return array<string, string>
      */
     public function attributes(): array
@@ -120,6 +144,7 @@ class StoreLogRequest extends FormRequest
             'day_type' => '勤務形態',
             'selection_meta.*.duration_min' => 'かけた時間',
             'selection_meta.*.effect_score' => '効いた感',
+            'check_items.*.severity' => '強度',
         ];
     }
 }

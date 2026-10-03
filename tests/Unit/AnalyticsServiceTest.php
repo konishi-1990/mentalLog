@@ -961,3 +961,42 @@ it('期間比較：クセの選択率は選択肢の追加日以降の記録日�
     expect($row['before_rate'])->toBeNull()
         ->and($row['after_rate'])->toBe(1.0);
 });
+
+it('強度合計：同日の○の強度を合計し、合計ごとの日数と平均を返す', function () {
+    $user = User::factory()->create();
+    [$a, $b] = $user->checkItems()->orderBy('sort_order')->take(2)->get()->all();
+
+    $l1 = Log::factory()->for($user)->create(['logged_on' => '2026-07-01', 'stress' => 8, 'mental_capacity' => 3]);
+    LogCheckItemValue::create(['log_id' => $l1->id, 'check_item_id' => $a->id, 'is_on' => true, 'severity' => 3]);
+    LogCheckItemValue::create(['log_id' => $l1->id, 'check_item_id' => $b->id, 'is_on' => true, 'severity' => 1]);
+    $l2 = Log::factory()->for($user)->create(['logged_on' => '2026-07-02', 'stress' => 4, 'mental_capacity' => 7]);
+    LogCheckItemValue::create(['log_id' => $l2->id, 'check_item_id' => $a->id, 'is_on' => false]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-03', 'stress' => 2, 'mental_capacity' => 9]); // ○なし＝0
+
+    $rows = collect($this->service->stressSourceLoad($user));
+
+    expect($rows->pluck('load')->all())->toBe([0, 4])
+        ->and($rows->firstWhere('load', 0)['days'])->toBe(2)
+        ->and($rows->firstWhere('load', 0)['avg_stress'])->toBe(3.0)
+        ->and($rows->firstWhere('load', 4)['avg_mental_capacity'])->toBe(3.0);
+});
+
+it('強度合計：強度が未入力の○を含む日は集計から外す（過去ログ）', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create(['logged_on' => '2026-07-01']);
+    LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => true]);
+
+    expect($this->service->stressSourceLoad($user))->toBe([]);
+});
+
+it('○×頻度：項目ごとの平均強度を返す（未入力は除く）', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    foreach (['2026-07-01' => 3, '2026-07-02' => 2, '2026-07-03' => null] as $d => $sev) {
+        $log = Log::factory()->for($user)->create(['logged_on' => $d]);
+        LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => true, 'severity' => $sev]);
+    }
+
+    expect($this->service->checkItemFrequency($user)->firstWhere('id', $item->id)->avg_severity)->toBe(2.5);
+});

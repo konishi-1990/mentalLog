@@ -96,6 +96,9 @@
                         @foreach ($onValues as $v)
                             <li class="text-sm text-gray-700">
                                 <span class="font-medium">{{ $v->checkItem->name }}</span>
+                                @if ($v->severity)
+                                    <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ \App\Support\SeverityLevels::label($v->severity) }}</span>
+                                @endif
                                 @if ($v->detail_text)
                                     <span class="text-gray-500">— {{ $v->detail_text }}</span>
                                 @endif

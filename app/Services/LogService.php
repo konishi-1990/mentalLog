@@ -49,7 +49,9 @@ class LogService
     /**
      * ○×回答を置き換える。ユーザ自身の項目のみ受け付ける。
      *
-     * @param  array<int, array{is_on?: mixed, detail_text?: ?string}>  $checkItems
+     * ✕の項目は補足・強度を捨てる（○を外したときに古い値を残さない）。
+     *
+     * @param  array<int, array{is_on?: mixed, detail_text?: ?string, severity?: mixed}>  $checkItems
      */
     private function syncCheckItemValues(User $user, Log $log, array $checkItems): void
     {
@@ -68,6 +70,7 @@ class LogService
                 'check_item_id' => $checkItemId,
                 'is_on' => $isOn,
                 'detail_text' => $isOn ? ($val['detail_text'] ?? null) : null,
+                'severity' => $isOn ? $this->nullableInt($val['severity'] ?? null) : null,
             ]);
         }
     }

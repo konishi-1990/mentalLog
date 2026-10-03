@@ -121,6 +121,7 @@
             @php
                 $isOn = (bool) old("check_items.{$item->id}.is_on", $checkValues[$item->id]->is_on ?? false);
                 $detail = old("check_items.{$item->id}.detail_text", $checkValues[$item->id]->detail_text ?? '');
+                $severity = old("check_items.{$item->id}.severity", $checkValues[$item->id]->severity ?? null);
             @endphp
             <div class="border-b border-gray-100 pb-3 last:border-0" data-check-row>
                 <div class="flex items-center gap-6">
@@ -134,10 +135,22 @@
                                {{ $isOn ? '' : 'checked' }} data-toggle-detail> ✕
                     </label>
                 </div>
-                <input type="text" name="check_items[{{ $item->id }}][detail_text]" value="{{ $detail }}"
-                       placeholder="○の内容（任意）"
-                       class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm {{ $isOn ? '' : 'hidden' }}"
-                       data-detail-input>
+                {{-- ○のときだけ表示：強度（既定値なし）と内容 --}}
+                <div class="mt-2 space-y-2 {{ $isOn ? '' : 'hidden' }}" data-detail-input>
+                    <div class="flex flex-wrap items-center gap-3 text-sm">
+                        <span class="text-xs text-gray-500">強度</span>
+                        @foreach (\App\Support\SeverityLevels::options() as $value => $severityLabel)
+                            <label class="inline-flex items-center gap-1">
+                                <input type="radio" name="check_items[{{ $item->id }}][severity]" value="{{ $value }}" @checked((string) $severity === (string) $value)>
+                                {{ $severityLabel }}
+                            </label>
+                        @endforeach
+                    </div>
+                    @error("check_items.{$item->id}.severity") <p class="text-sm text-red-600">{{ $message }}</p> @enderror
+                    <input type="text" name="check_items[{{ $item->id }}][detail_text]" value="{{ $detail }}"
+                           placeholder="○の内容（任意）"
+                           class="w-full rounded-md border-gray-300 text-sm shadow-sm">
+                </div>
             </div>
         @empty
             <p class="text-sm text-gray-500">○×項目が未設定です。</p>
@@ -279,7 +292,7 @@
 </div>
 
 <script>
-    // ○選択時のみ内容欄を表示
+    // ○選択時のみ強度・内容欄を表示
     document.querySelectorAll('[data-check-row]').forEach(row => {
         const detail = row.querySelector('[data-detail-input]');
         row.querySelectorAll('[data-toggle-detail]').forEach(radio => {

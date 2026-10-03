@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Log;
+use App\Models\LogCheckItemValue;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 
@@ -70,3 +71,15 @@ it('追加項目が NULL なら CHECK 制約を通過する（既存ログ互換
 
     expect($log->exists)->toBeTrue();
 });
+
+it('ストレス源の強度が 1〜3 以外だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create();
+
+    LogCheckItemValue::create([
+        'log_id' => $log->id,
+        'check_item_id' => $user->checkItems()->first()->id,
+        'is_on' => true,
+        'severity' => 4,
+    ]);
+})->throws(QueryException::class);

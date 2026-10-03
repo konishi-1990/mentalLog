@@ -175,11 +175,13 @@
                 </div>
             </section>
 
-            {{-- 重なりと個数（同日にいくつ重なったか） --}}
+            {{-- 重なり・強度合計・クセの個数（同日にいくつ重なったか） --}}
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 @foreach ([
                     ['title' => 'ストレス源の重なり', 'unit' => '件', 'rows' => $overlap,
                      'note' => '同じ日に○がいくつ重なったか。重なるほどメンタル余裕は少しずつ下がります（ある件数で急に落ちるのではなく、足し算で効く）。1件でも翌日に押し出せれば、その分だけ軽くなります。'],
+                    ['title' => 'ストレス源の強度合計', 'unit' => '', 'rows' => $load, 'key' => 'load', 'heading' => '強度の合計',
+                     'note' => '○の強度（軽い=1・中くらい=2・重い=3）を同じ日で合計したもの。件数より重みで効いているかを見る欄です。強度が未入力の日（導入前のログ）は含みません。'],
                     ['title' => '頭の中のクセの個数', 'unit' => '個', 'rows' => $habitCount,
                      'note' => '「特になし」は0個として数えています。個数がメンタル余裕の代わりに使えるかを見る欄です。'],
                 ] as $card)
@@ -193,7 +195,7 @@
                                 <table class="min-w-full text-sm">
                                     <thead class="text-gray-500">
                                         <tr>
-                                            <th class="py-2 pr-4 text-left font-normal">同じ日の数</th>
+                                            <th class="py-2 pr-4 text-left font-normal">{{ $card['heading'] ?? '同じ日の数' }}</th>
                                             <th class="py-2 pr-4 text-right font-normal">日数</th>
                                             <th class="py-2 pr-4 text-right font-normal">ストレス</th>
                                             <th class="py-2 text-right font-normal">メンタル余裕</th>
@@ -202,7 +204,7 @@
                                     <tbody class="divide-y divide-gray-100">
                                         @foreach ($card['rows'] as $row)
                                             <tr>
-                                                <td class="py-2 pr-4 text-gray-700">{{ $row['count'] }}{{ $card['unit'] }}</td>
+                                                <td class="py-2 pr-4 text-gray-700">{{ $row[$card['key'] ?? 'count'] }}{{ $card['unit'] }}</td>
                                                 <td class="py-2 pr-4 text-right text-gray-500">{{ $row['days'] }}</td>
                                                 <td class="py-2 pr-4 text-right text-gray-700">{{ $row['avg_stress'] === null ? '—' : number_format($row['avg_stress'], 1) }}</td>
                                                 <td class="py-2 text-right font-medium text-gray-800">{{ $row['avg_mental_capacity'] === null ? '—' : number_format($row['avg_mental_capacity'], 1) }}</td>

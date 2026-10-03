@@ -266,3 +266,29 @@ describe('相手タグ', function () {
         expect($log->people()->pluck('people.id')->all())->toBe([$b->id]);
     });
 });
+
+it('○の項目は強度を保存し、✕は送られてきても NULL にする', function () {
+    $user = User::factory()->create();
+    [$onItem, $offItem] = $user->checkItems()->orderBy('sort_order')->take(2)->get()->all();
+
+    $log = $this->service->upsertDailyLog($user, logPayload([
+        'check_items' => [
+            $onItem->id => ['is_on' => true, 'severity' => '3'],
+            $offItem->id => ['is_on' => false, 'severity' => '2'],
+        ],
+    ]));
+
+    expect(LogCheckItemValue::where('log_id', $log->id)->where('check_item_id', $onItem->id)->value('severity'))->toBe(3)
+        ->and(LogCheckItemValue::where('log_id', $log->id)->where('check_item_id', $offItem->id)->value('severity'))->toBeNull();
+});
+
+it('強度を送らなければ NULL で保存する（過去ログ・必須化前）', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+
+    $log = $this->service->upsertDailyLog($user, logPayload([
+        'check_items' => [$item->id => ['is_on' => true]],
+    ]));
+
+    expect($log->checkItemValues()->first()->severity)->toBeNull();
+});

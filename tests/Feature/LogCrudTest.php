@@ -6,6 +6,7 @@ use App\Models\Person;
 use App\Models\User;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\SeverityLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
 
@@ -461,4 +462,38 @@ it('コントロール可能度は外に出しても任意のまま（触らな�
     $this->actingAs($user)->post(route('logs.store'), logPayload())->assertRedirect();
 
     expect(Log::first()->controllability)->toBeNull();
+});
+
+it('ストレス源の各項目に強度の3ボタンが描画され、既定では何も選ばれていない', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+
+    $response = $this->actingAs($user)->get(route('logs.create'))->assertOk();
+
+    foreach (SeverityLevels::options() as $value => $label) {
+        $response->assertSee("name=\"check_items[{$item->id}][severity]\" value=\"{$value}\"", false)
+            ->assertSee($label);
+    }
+    $response->assertDontSee("name=\"check_items[{$item->id}][severity]\" value=\"1\" checked", false);
+});
+
+it('保存した強度が詳細画面にラベルで、編集画面に選択状態で出る', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create();
+    $log->checkItemValues()->create(['check_item_id' => $item->id, 'is_on' => true, 'severity' => 3]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk()->assertSee('重い');
+    $this->actingAs($user)->get(route('logs.edit', $log))->assertOk()
+        ->assertSee("name=\"check_items[{$item->id}][severity]\" value=\"3\" checked", false);
+});
+
+it('強度が NULL の○（過去ログ）でも詳細・編集画面が開ける', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create();
+    $log->checkItemValues()->create(['check_item_id' => $item->id, 'is_on' => true]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk();
+    $this->actingAs($user)->get(route('logs.edit', $log))->assertOk();
 });
