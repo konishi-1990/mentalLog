@@ -1022,3 +1022,20 @@ it('疲労度：時系列・相関・自己相関・勤務形態別に含まれ�
         ->and(collect($this->service->dayTypeBreakdown($user))->first()['avg_fatigue'])->toBe(5.0)
         ->and(AnalyticsService::METRIC_LABELS['fatigue'])->toBe('疲労度');
 });
+
+it('起きたときの余裕：同日の朝→夕方の相関と、前日の夕方→翌朝の自己相関に含まれる', function () {
+    $user = User::factory()->create();
+    foreach (range(1, 4) as $i) {
+        Log::factory()->for($user)->create([
+            'logged_on' => "2026-07-0{$i}", 'morning_capacity' => $i, 'mental_capacity' => $i + 1,
+        ]);
+    }
+
+    $corr = collect($this->service->correlations($user))->firstWhere('key', 'morning_capacity_mental_capacity');
+    $auto = collect($this->service->autocorrelations($user))->firstWhere('key', 'mental_capacity_next_morning_capacity');
+
+    expect($corr['n'])->toBe(4)
+        ->and($auto['n'])->toBe(3)
+        ->and($this->service->timeSeries($user)->first()->morning_capacity)->toBe(1)
+        ->and(AnalyticsService::METRIC_LABELS['morning_capacity'])->toBe('起きたときの余裕');
+});

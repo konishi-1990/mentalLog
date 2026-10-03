@@ -29,6 +29,8 @@
     // （report-202610.md §1。持ち越し感と r=−0.83 で最も効いている指標）。
     $mainOptionalScores = [
         'controllability' => ['label' => 'コントロール可能度', 'hint' => '高いと自分で動かせた・任意'],
+        // 夕方の余裕との差で「朝からどう動いたか」、前日との差で「どれだけ持ち越したか」を見る
+        'morning_capacity' => ['label' => '起きたときの余裕', 'hint' => '高いと余裕あり・任意'],
     ];
 
     $sleepHours = old('sleep_hours', $log?->sleep_hours);

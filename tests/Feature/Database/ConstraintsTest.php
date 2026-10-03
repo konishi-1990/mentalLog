@@ -95,3 +95,8 @@ it('体力は NULL で保存できる（凍結後の新規ログ）', function (
 
     expect($log->fresh()->stamina)->toBeNull();
 });
+
+it('起きたときの余裕が範囲外(11)だと保存できない（CHECK制約）', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['morning_capacity' => 11]);
+})->throws(QueryException::class);

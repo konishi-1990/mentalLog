@@ -350,3 +350,15 @@ it('体力を送らなくても保存できる（凍結）', function () {
         ->post(route('logs.store'), $payload)
         ->assertSessionHasNoErrors();
 });
+
+it('起きたときの余裕は任意（未送信でも保存できる）', function () {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload())
+        ->assertSessionHasNoErrors();
+});
+
+it('起きたときの余裕が範囲外だとエラー', function (int $value) {
+    $this->actingAs($this->user)
+        ->post(route('logs.store'), logPayload(['morning_capacity' => $value]))
+        ->assertSessionHasErrors('morning_capacity');
+})->with([-1, 11]);

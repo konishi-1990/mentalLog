@@ -20,6 +20,7 @@ class LogFactory extends Factory
             'stress' => fake()->numberBetween(0, 10),
             'stamina' => fake()->numberBetween(0, 10),
             'fatigue' => fake()->optional()->numberBetween(0, 10),
+            'morning_capacity' => fake()->optional()->numberBetween(0, 10),
             'mental_capacity' => fake()->numberBetween(0, 10),
             'sleep_hours' => fake()->optional()->randomElement([4.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0]),
             'sleep_quality' => fake()->optional()->numberBetween(0, 10),

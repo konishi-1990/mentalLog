@@ -25,6 +25,7 @@ class LogService
                 'sleep_quality' => $data['sleep_quality'] ?? null,
                 'carryover' => $data['carryover'] ?? null,
                 'controllability' => $data['controllability'] ?? null,
+                'morning_capacity' => $data['morning_capacity'] ?? null,
                 'day_type' => $data['day_type'] ?? null,
                 'hardest_text' => $data['hardest_text'] ?? null,
                 'summary_text' => $data['summary_text'] ?? null,

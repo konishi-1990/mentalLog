@@ -38,6 +38,7 @@ class StoreLogRequest extends FormRequest
             'sleep_quality' => ['nullable', 'integer', 'between:0,10'],
             'carryover' => ['nullable', 'integer', 'between:0,10'],
             'controllability' => ['nullable', 'integer', 'between:0,10'],
+            'morning_capacity' => ['nullable', 'integer', 'between:0,10'],
             'day_type' => ['nullable', Rule::in(DayTypes::codes())],
 
             'hardest_text' => ['nullable', 'string', 'max:2000'],
@@ -146,6 +147,7 @@ class StoreLogRequest extends FormRequest
             'sleep_quality' => '睡眠の質',
             'carryover' => '前日からの持ち越し感',
             'controllability' => 'コントロール可能度',
+            'morning_capacity' => '起きたときの余裕',
             'day_type' => '勤務形態',
             'selection_meta.*.duration_min' => 'かけた時間',
             'selection_meta.*.effect_score' => '効いた感',

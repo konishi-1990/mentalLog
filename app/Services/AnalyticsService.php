@@ -33,6 +33,8 @@ class AnalyticsService
         ['carryover', 'stress'],
         ['controllability', 'stress'],
         ['controllability', 'mental_capacity'],
+        // 同じ日の朝→夕方
+        ['morning_capacity', 'mental_capacity'],
     ];
 
     /**
@@ -49,6 +51,8 @@ class AnalyticsService
         ['fatigue', 'fatigue'],
         ['stress', 'mental_capacity'],
         ['carryover', 'mental_capacity'],
+        // 前日の夕方→翌朝。持ち越しを朝の時点で直接測る
+        ['mental_capacity', 'morning_capacity'],
     ];
 
     /**
@@ -81,6 +85,7 @@ class AnalyticsService
         'sleep_quality' => '睡眠の質',
         'carryover' => '持ち越し感',
         'controllability' => 'コントロール可能度',
+        'morning_capacity' => '起きたときの余裕',
     ];
 
     /**
@@ -102,6 +107,7 @@ class AnalyticsService
                 'sleep_quality',
                 'carryover',
                 'controllability',
+                'morning_capacity',
             ]);
     }
 
@@ -180,7 +186,7 @@ class AnalyticsService
             ->when($from, fn ($q, $v) => $q->whereDate('logged_on', '>=', $v))
             ->when($to, fn ($q, $v) => $q->whereDate('logged_on', '<=', $v))
             ->orderBy('logged_on')
-            ->get(['logged_on', 'stress', 'stamina', 'fatigue', 'mental_capacity', 'carryover']);
+            ->get(['logged_on', 'stress', 'stamina', 'fatigue', 'mental_capacity', 'carryover', 'morning_capacity']);
 
         $byDate = $logs->keyBy(fn ($log) => $log->logged_on->format('Y-m-d'));
 

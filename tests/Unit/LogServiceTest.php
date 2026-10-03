@@ -315,3 +315,11 @@ it('体力を送らずに過去ログを更新しても、既存の体力は消�
     expect($log->fresh()->stamina)->toBe(4)
         ->and($log->fresh()->fatigue)->toBe(6);
 });
+
+it('起きたときの余裕を保存する', function () {
+    $user = User::factory()->create();
+
+    $log = $this->service->upsertDailyLog($user, logPayload(['morning_capacity' => 3]));
+
+    expect($log->fresh()->morning_capacity)->toBe(3);
+});

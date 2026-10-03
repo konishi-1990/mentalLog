@@ -555,3 +555,21 @@ it('適用日以降のログの編集画面では、疲労度は必須スライ�
         ->assertOk()
         ->assertSee(' name="fatigue"', false);
 });
+
+it('起きたときの余裕は数値セクションの任意スライダー（触らなければ送信されない）', function () {
+    $user = User::factory()->create();
+
+    $html = $this->actingAs($user)->get(route('logs.create'))->assertOk()
+        ->assertSee('起きたときの余裕')
+        ->assertDontSee(' name="morning_capacity"', false)
+        ->getContent();
+
+    expect(strpos($html, 'data-score-name="morning_capacity"'))->toBeLessThan(strpos($html, '<details'));
+});
+
+it('起きたときの余裕が詳細画面に出る（未入力は「—」）', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['morning_capacity' => 2]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk()->assertSee('起きたときの余裕');
+});

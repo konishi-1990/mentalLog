@@ -12,6 +12,7 @@
         'sleep_quality' => ['label' => '睡眠の質', 'higher_is_better' => true],
         'carryover' => ['label' => '前日からの持ち越し感', 'higher_is_better' => false],
         'controllability' => ['label' => 'コントロール可能度', 'higher_is_better' => true],
+        'morning_capacity' => ['label' => '起きたときの余裕', 'higher_is_better' => true],
     ];
 
     $scoreClass = function (bool $higherIsBetter, int $v): string {
@@ -77,7 +78,7 @@
                         </span>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-4 text-center">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                     @foreach ($extraScores as $field => $meta)
                         <div>
                             <div class="text-sm text-gray-500 mb-2">{{ $meta['label'] }}</div>
