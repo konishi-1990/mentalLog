@@ -31,8 +31,17 @@
                     <label class="block text-xs text-gray-500 mb-1">終了</label>
                     <input type="date" name="to" value="{{ $to }}" class="rounded-md border-gray-300 text-sm">
                 </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">比較の区切り日（任意）</label>
+                    <input type="date" name="pivot" value="{{ $pivot }}" class="rounded-md border-gray-300 text-sm">
+                    @error('pivot') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                </div>
                 <button class="px-4 py-1.5 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700">集計</button>
             </form>
+
+            @if ($comparison)
+                @include('analytics.partials.period-comparison', ['cmp' => $comparison])
+            @endif
 
             {{-- 時系列 --}}
             <section class="bg-white rounded-lg border border-gray-200 p-6">
@@ -170,7 +179,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 @foreach ([
                     ['title' => 'ストレス源の重なり', 'unit' => '件', 'rows' => $overlap,
-                     'note' => '同じ日に○がいくつ重なったか。件数が増えるほどメンタル余裕が落ちるなら、2件目を翌日に押し出すだけで効きます。'],
+                     'note' => '同じ日に○がいくつ重なったか。重なるほどメンタル余裕は少しずつ下がります（ある件数で急に落ちるのではなく、足し算で効く）。1件でも翌日に押し出せれば、その分だけ軽くなります。'],
                     ['title' => '頭の中のクセの個数', 'unit' => '個', 'rows' => $habitCount,
                      'note' => '「特になし」は0個として数えています。個数がメンタル余裕の代わりに使えるかを見る欄です。'],
                 ] as $card)
@@ -290,15 +299,15 @@
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {{-- ストレス源頻度 --}}
-                <x-analytics-bars title="ストレス源（○）の頻度" :items="$checkItemFreq" label="name" />
+                <x-analytics-bars title="ストレス源（○）の頻度" :items="$checkItemFreq" label="name" denominator="answered_days" />
                 {{-- 頭のクセ頻度 --}}
-                <x-analytics-bars title="頭の中のクセ 頻度" :items="$thoughtFreq" label="label" />
+                <x-analytics-bars title="頭の中のクセ 頻度" :items="$thoughtFreq" label="label" denominator="available_days" />
                 {{-- 体の反応頻度 --}}
-                <x-analytics-bars title="体の反応 頻度" :items="$bodyFreq" label="label" />
+                <x-analytics-bars title="体の反応 頻度" :items="$bodyFreq" label="label" denominator="available_days" />
                 {{-- 相手タグ頻度 --}}
                 <x-analytics-bars title="関わった相手 頻度" :items="$personFreq" label="name" />
                 {{-- 摂取物頻度 --}}
-                <x-analytics-bars title="摂取したもの 頻度" :items="$intakeFreq" label="label" />
+                <x-analytics-bars title="摂取したもの 頻度" :items="$intakeFreq" label="label" denominator="available_days" />
 
                 {{-- 回復効果 --}}
                 <section class="bg-white rounded-lg border border-gray-200 p-6">

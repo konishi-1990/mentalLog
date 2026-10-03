@@ -439,3 +439,26 @@ it('カテゴリの説明文がフォームに表示される（摂取物への�
         ->assertSee('コーヒー・お酒・薬はこちら')
         ->assertSee('超重要');
 });
+
+it('コントロール可能度は「くわしく」の外（数値セクション）に描画される', function () {
+    $user = User::factory()->create();
+
+    $html = $this->actingAs($user)->get(route('logs.create'))->assertOk()->getContent();
+
+    // 最も効いている指標なのに「くわしく」の中で入力率が 30% まで落ちていた（report-202610.md §1）
+    expect(strpos($html, 'data-score-name="controllability"'))->toBeLessThan(strpos($html, '<details'))
+        // 持ち越し感は「くわしく」に残す（要判断 E-1）
+        ->and(strpos($html, 'data-score-name="carryover"'))->toBeGreaterThan(strpos($html, '<details'));
+});
+
+it('コントロール可能度は外に出しても任意のまま（触らなければ送信されない）', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('logs.create'))
+        ->assertOk()
+        ->assertDontSee(' name="controllability"', false);
+
+    $this->actingAs($user)->post(route('logs.store'), logPayload())->assertRedirect();
+
+    expect(Log::first()->controllability)->toBeNull();
+});

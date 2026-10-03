@@ -1,4 +1,6 @@
-@props(['title', 'items', 'label'])
+@props(['title', 'items', 'label', 'denominator' => null])
+
+{{-- denominator を渡すと「回数 / 選べた日数」で表示する（途中で追加した項目を過小に見せないため） --}}
 
 @php $max = max(1, collect($items)->max('total') ?? 1); @endphp
 
@@ -12,7 +14,7 @@
                 <li>
                     <div class="flex justify-between text-sm text-gray-700 mb-0.5">
                         <span>{{ $item->$label }}</span>
-                        <span class="text-gray-400">{{ $item->total }}</span>
+                        <span class="text-gray-400">{{ $item->total }}@if ($denominator && isset($item->$denominator)) / {{ $item->$denominator }}@endif</span>
                     </div>
                     <div class="h-2 bg-gray-100 rounded">
                         <div class="h-2 bg-indigo-400 rounded" style="width: {{ round($item->total / $max * 100) }}%"></div>

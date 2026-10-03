@@ -20,7 +20,12 @@
     $extraScores = [
         'sleep_quality' => ['label' => '睡眠の質', 'hint' => '高いとよく眠れた'],
         'carryover' => ['label' => '前日からの持ち越し感', 'hint' => '高いと引きずっている'],
-        'controllability' => ['label' => 'コントロール可能度', 'hint' => '高いと自分で動かせた'],
+    ];
+
+    // 数値セクションに置く任意項目。「くわしく」の中では入力率が落ちていたため外に出す
+    // （report-202610.md §1。持ち越し感と r=−0.83 で最も効いている指標）。
+    $mainOptionalScores = [
+        'controllability' => ['label' => 'コントロール可能度', 'hint' => '高いと自分で動かせた・任意'],
     ];
 
     $sleepHours = old('sleep_hours', $log?->sleep_hours);
@@ -48,6 +53,15 @@
                 'label' => $meta['label'],
                 'hint' => $meta['hint'],
                 'current' => old($key, $log?->{$key} ?? $meta['default']),
+            ])
+        @endforeach
+        @foreach ($mainOptionalScores as $key => $meta)
+            @include('logs.partials.score-slider', [
+                'key' => $key,
+                'label' => $meta['label'],
+                'hint' => $meta['hint'],
+                'current' => old($key, $log?->{$key}),
+                'optional' => true,
             ])
         @endforeach
     </section>
