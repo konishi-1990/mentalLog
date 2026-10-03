@@ -818,3 +818,224 @@ describe('相関の並び順', function () {
         expect($rs)->toBe(collect($rs)->sortDesc()->values()->all());
     });
 });
+
+it('チェック頻度：選べた日数（選択肢の追加日以降のログ数）と割合を返す', function () {
+    $user = User::factory()->create();
+    $irritation = ChecklistOption::whereRelation('category', 'code', 'body_reaction')
+        ->where('label', 'イライラ')->first();
+    // 期間の途中（7/03）で追加された選択肢として扱う
+    $irritation->forceFill(['created_at' => '2026-07-03 12:00:00'])->save();
+
+    foreach (['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04'] as $d) {
+        $log = Log::factory()->for($user)->create(['logged_on' => $d]);
+        if ($d === '2026-07-04') {
+            $log->checklistSelections()->create(['checklist_option_id' => $irritation->id]);
+        }
+    }
+    Log::factory()->for(User::factory()->create())->create(['logged_on' => '2026-07-04']); // 他人のログは分母に入れない
+
+    $row = $this->service->checklistFrequency($user, '2026-07-01', '2026-07-31')->firstWhere('id', $irritation->id);
+
+    // 全期間（4日）ではなく、追加日 7/03 以降の 2日 が分母
+    expect($row->total)->toBe(1)
+        ->and($row->available_days)->toBe(2)
+        ->and($row->rate)->toBe(0.5);
+});
+
+it('○×頻度：回答した日数（×も含む）を分母として返す', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    foreach (['2026-07-01' => true, '2026-07-02' => false, '2026-07-03' => true] as $d => $on) {
+        $log = Log::factory()->for($user)->create(['logged_on' => $d]);
+        LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => $on]);
+    }
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-04']); // 項目に回答していない日は分母に入れない
+
+    $row = $this->service->checkItemFrequency($user)->firstWhere('id', $item->id);
+
+    expect($row->total)->toBe(2)
+        ->and($row->answered_days)->toBe(3);
+});
+
+it('○×頻度：○が1回も無い項目は従来どおり出さない', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create(['logged_on' => '2026-07-01']);
+    LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => false]);
+
+    expect($this->service->checkItemFrequency($user)->firstWhere('id', $item->id))->toBeNull();
+});
+
+it('期間比較：区切り日の前と後で記録率と各指標の平均を返す（区切り日当日は後）', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-01', 'stress' => 8, 'mental_capacity' => 4]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-02', 'stress' => 6, 'mental_capacity' => 6]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-05', 'stress' => 3, 'mental_capacity' => 7]); // 区切り日当日
+    Log::factory()->for($user)->create(['logged_on' => '2026-08-01', 'stress' => 1]); // 期間外
+    Log::factory()->for(User::factory()->create())->create(['logged_on' => '2026-07-06', 'stress' => 0]); // 他人
+
+    $cmp = $this->service->periodComparison($user, '2026-07-01', '2026-07-10', '2026-07-05');
+
+    expect($cmp['pivot'])->toBe('2026-07-05')
+        ->and($cmp['before']['from'])->toBe('2026-07-01')
+        ->and($cmp['before']['to'])->toBe('2026-07-04')
+        ->and($cmp['before']['total_days'])->toBe(4)
+        ->and($cmp['before']['logged_days'])->toBe(2)
+        ->and($cmp['before']['rate'])->toBe(0.5)
+        ->and($cmp['before']['avg']['stress'])->toBe(7.0)
+        ->and($cmp['before']['avg']['mental_capacity'])->toBe(5.0)
+        ->and($cmp['after']['from'])->toBe('2026-07-05')
+        ->and($cmp['after']['to'])->toBe('2026-07-10')
+        ->and($cmp['after']['total_days'])->toBe(6)
+        ->and($cmp['after']['logged_days'])->toBe(1)
+        ->and($cmp['after']['avg']['stress'])->toBe(3.0);
+});
+
+it('期間比較：ストレス源の○率（○ / 回答日数）を前後で返す', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    foreach (['2026-07-01' => true, '2026-07-02' => true, '2026-07-05' => false, '2026-07-06' => true] as $d => $on) {
+        $log = Log::factory()->for($user)->create(['logged_on' => $d]);
+        LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => $on]);
+    }
+
+    $row = collect($this->service->periodComparison($user, '2026-07-01', '2026-07-10', '2026-07-05')['check_items'])
+        ->firstWhere('name', $item->name);
+
+    expect($row['before_rate'])->toBe(1.0)
+        ->and($row['after_rate'])->toBe(0.5);
+});
+
+it('期間比較：クセの選択率と「何もできてない」の割合を前後で返す', function () {
+    $user = User::factory()->create();
+    $habit = ChecklistOption::whereRelation('category', 'code', 'thought_habit')
+        ->where('label', '何も考えたくなくなった')->first();
+    $nothing = ChecklistOption::whereRelation('category', 'code', 'recovery_action')
+        ->where('label', '何もできてない')->first();
+    // 分母は「選択肢を追加した日以降の記録日数」。seed 直後の created_at は今日なので過去にずらす
+    $habit->forceFill(['created_at' => '2026-06-01 00:00:00'])->save();
+
+    $a = Log::factory()->for($user)->create(['logged_on' => '2026-07-01']);
+    $a->checklistSelections()->create(['checklist_option_id' => $habit->id]);
+    $a->checklistSelections()->create(['checklist_option_id' => $nothing->id]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-02']);
+    $c = Log::factory()->for($user)->create(['logged_on' => '2026-07-05']);
+    $c->checklistSelections()->create(['checklist_option_id' => $nothing->id]);
+
+    $cmp = $this->service->periodComparison($user, '2026-07-01', '2026-07-10', '2026-07-05');
+    $row = collect($cmp['thought_habits'])->firstWhere('label', '何も考えたくなくなった');
+
+    expect($row['before_rate'])->toBe(0.5)
+        ->and($row['after_rate'])->toBe(0.0)
+        ->and($cmp['before']['no_recovery_rate'])->toBe(0.5)
+        ->and($cmp['after']['no_recovery_rate'])->toBe(1.0);
+});
+
+it('期間比較：片方にログが無くても落ちず、平均と割合は null', function () {
+    $user = User::factory()->create();
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-08']);
+
+    $cmp = $this->service->periodComparison($user, '2026-07-01', '2026-07-10', '2026-07-05');
+
+    expect($cmp['before']['logged_days'])->toBe(0)
+        ->and($cmp['before']['avg']['stress'])->toBeNull()
+        ->and($cmp['before']['no_recovery_rate'])->toBeNull()
+        ->and($cmp['after']['logged_days'])->toBe(1);
+});
+
+it('期間比較：クセの選択率は選択肢の追加日以降の記録日数を分母にし、追加前の期間は null', function () {
+    $user = User::factory()->create();
+    $habit = ChecklistOption::whereRelation('category', 'code', 'thought_habit')
+        ->where('label', '何も考えたくなくなった')->first();
+    $habit->forceFill(['created_at' => '2026-07-06 09:00:00'])->save(); // 区切り日の後に追加
+
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-01']);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-05']);
+    $c = Log::factory()->for($user)->create(['logged_on' => '2026-07-06']);
+    $c->checklistSelections()->create(['checklist_option_id' => $habit->id]);
+
+    $row = collect($this->service->periodComparison($user, '2026-07-01', '2026-07-10', '2026-07-05')['thought_habits'])
+        ->firstWhere('label', '何も考えたくなくなった');
+
+    // 前：選べなかった → null／後：7/05・7/06 の2日のうち選べたのは 7/06 の1日 → 1/1
+    expect($row['before_rate'])->toBeNull()
+        ->and($row['after_rate'])->toBe(1.0);
+});
+
+it('強度合計：同日の○の強度を合計し、合計ごとの日数と平均を返す', function () {
+    $user = User::factory()->create();
+    [$a, $b] = $user->checkItems()->orderBy('sort_order')->take(2)->get()->all();
+
+    $l1 = Log::factory()->for($user)->create(['logged_on' => '2026-07-01', 'stress' => 8, 'mental_capacity' => 3]);
+    LogCheckItemValue::create(['log_id' => $l1->id, 'check_item_id' => $a->id, 'is_on' => true, 'severity' => 3]);
+    LogCheckItemValue::create(['log_id' => $l1->id, 'check_item_id' => $b->id, 'is_on' => true, 'severity' => 1]);
+    $l2 = Log::factory()->for($user)->create(['logged_on' => '2026-07-02', 'stress' => 4, 'mental_capacity' => 7]);
+    LogCheckItemValue::create(['log_id' => $l2->id, 'check_item_id' => $a->id, 'is_on' => false]);
+    Log::factory()->for($user)->create(['logged_on' => '2026-07-03', 'stress' => 2, 'mental_capacity' => 9]); // ○なし＝0
+
+    $rows = collect($this->service->stressSourceLoad($user));
+
+    expect($rows->pluck('load')->all())->toBe([0, 4])
+        ->and($rows->firstWhere('load', 0)['days'])->toBe(2)
+        ->and($rows->firstWhere('load', 0)['avg_stress'])->toBe(3.0)
+        ->and($rows->firstWhere('load', 4)['avg_mental_capacity'])->toBe(3.0);
+});
+
+it('強度合計：強度が未入力の○を含む日は集計から外す（過去ログ）', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create(['logged_on' => '2026-07-01']);
+    LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => true]);
+
+    expect($this->service->stressSourceLoad($user))->toBe([]);
+});
+
+it('○×頻度：項目ごとの平均強度を返す（未入力は除く）', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    foreach (['2026-07-01' => 3, '2026-07-02' => 2, '2026-07-03' => null] as $d => $sev) {
+        $log = Log::factory()->for($user)->create(['logged_on' => $d]);
+        LogCheckItemValue::create(['log_id' => $log->id, 'check_item_id' => $item->id, 'is_on' => true, 'severity' => $sev]);
+    }
+
+    expect($this->service->checkItemFrequency($user)->firstWhere('id', $item->id)->avg_severity)->toBe(2.5);
+});
+
+it('疲労度：時系列・相関・自己相関・勤務形態別に含まれる', function () {
+    $user = User::factory()->create();
+    foreach (range(1, 4) as $i) {
+        Log::factory()->for($user)->create([
+            'logged_on' => "2026-07-0{$i}", 'fatigue' => $i * 2, 'mental_capacity' => 10 - $i * 2,
+            'sleep_hours' => 5 + $i, 'day_type' => 'weekday',
+        ]);
+    }
+
+    $keys = collect($this->service->correlations($user))->pluck('key');
+    $autoKeys = collect($this->service->autocorrelations($user))->pluck('key');
+
+    expect($this->service->timeSeries($user)->first()->fatigue)->toBe(2)
+        ->and($keys)->toContain('fatigue_mental_capacity')
+        ->and($keys)->toContain('fatigue_sleep_hours')
+        // 体力の組も過去データ用に残す
+        ->and($keys)->toContain('stamina_mental_capacity')
+        ->and($autoKeys)->toContain('fatigue_next_fatigue')
+        ->and(collect($this->service->dayTypeBreakdown($user))->first()['avg_fatigue'])->toBe(5.0)
+        ->and(AnalyticsService::METRIC_LABELS['fatigue'])->toBe('疲労度');
+});
+
+it('起きたときの余裕：同日の朝→夕方の相関と、前日の夕方→翌朝の自己相関に含まれる', function () {
+    $user = User::factory()->create();
+    foreach (range(1, 4) as $i) {
+        Log::factory()->for($user)->create([
+            'logged_on' => "2026-07-0{$i}", 'morning_capacity' => $i, 'mental_capacity' => $i + 1,
+        ]);
+    }
+
+    $corr = collect($this->service->correlations($user))->firstWhere('key', 'morning_capacity_mental_capacity');
+    $auto = collect($this->service->autocorrelations($user))->firstWhere('key', 'mental_capacity_next_morning_capacity');
+
+    expect($corr['n'])->toBe(4)
+        ->and($auto['n'])->toBe(3)
+        ->and($this->service->timeSeries($user)->first()->morning_capacity)->toBe(1)
+        ->and(AnalyticsService::METRIC_LABELS['morning_capacity'])->toBe('起きたときの余裕');
+});

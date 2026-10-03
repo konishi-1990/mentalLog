@@ -18,6 +18,11 @@ class ChecklistOptionSeeder extends Seeder
                 ['label' => '同時に全部解決しようとした'],
                 ['label' => '何も考えたくなくなった'],
                 ['label' => '特になし', 'is_none' => true],
+                // 以下は本番の管理画面で末尾に追加されたもの。位置を変えると
+                // seeder 実行時に本番の並び順が崩れるため、追加された順のまま末尾に置く。
+                ['label' => '激しく無駄な妄想してしまう'],
+                ['label' => '関係がめんどくさい'],
+                ['label' => '被害妄想がひどい'],
             ],
             'body_reaction' => [
                 ['label' => '睡眠が浅い'],
@@ -26,6 +31,9 @@ class ChecklistOptionSeeder extends Seeder
                 ['label' => '無気力'],
                 ['label' => '頭が回らない'],
                 ['label' => '特になし', 'is_none' => true],
+                ['label' => '力が入らない'], // 本番の管理画面で追加
+                // 体力のスコアに身体の不調が混ざっていたため切り出す（report-202610.md §2）
+                ['label' => '体の痛み・不調', 'requires_text' => true],
             ],
             'recovery_action' => [
                 ['label' => '温泉・サウナ'],
@@ -33,6 +41,8 @@ class ChecklistOptionSeeder extends Seeder
                 ['label' => '音楽・バンド系'],
                 ['label' => '一人時間'],
                 ['label' => '軽い運動・散歩'],
+                // 「その他」の補足に繰り返し出ていたもの（report-202610.md §2）
+                ['label' => 'カフェ・喫茶'],
                 // 実データでは他の回復行動と排他になっている（§2 ⑤）。is_none にすることで
                 // 排他ロジックが効き、同時に「効いた感」の必須化からも外れる。
                 ['label' => '何もできてない', 'is_none' => true],

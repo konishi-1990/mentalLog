@@ -43,8 +43,8 @@
                     @endif
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                    @foreach (['stress' => 'ストレス', 'stamina' => '体力', 'mental' => 'メンタル余裕'] as $key => $label)
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                    @foreach (['stress' => 'ストレス', 'fatigue' => '疲労度', 'stamina' => '体力（旧）', 'mental' => 'メンタル余裕'] as $key => $label)
                         <div>
                             <label class="block text-xs text-gray-500 mb-1">{{ $label }}（min〜max）</label>
                             <div class="flex items-center gap-2">
@@ -79,7 +79,7 @@
                                 <th class="px-4 py-3 text-left">日付</th>
                                 @if ($isAdmin ?? false)<th class="px-4 py-3 text-left">ユーザ</th>@endif
                                 <th class="px-4 py-3 text-center">ストレス</th>
-                                <th class="px-4 py-3 text-center">体力</th>
+                                <th class="px-4 py-3 text-center" title="疲労度が無い過去ログは体力（旧）を灰色で表示">疲労度</th>
                                 <th class="px-4 py-3 text-center">余裕</th>
                                 <th class="px-4 py-3 text-center">睡眠</th>
                                 <th class="px-4 py-3 text-left">まとめ</th>
@@ -92,7 +92,11 @@
                                     <td class="px-4 py-3">{{ $log->logged_on->format('Y-m-d') }}</td>
                                     @if ($isAdmin ?? false)<td class="px-4 py-3 text-gray-600">{{ $log->user?->name }}</td>@endif
                                     <td class="px-4 py-3 text-center {{ $stressClass($log->stress) }}">{{ $log->stress }}</td>
-                                    <td class="px-4 py-3 text-center">{{ $log->stamina }}</td>
+                                    @if ($log->fatigue !== null)
+                                        <td class="px-4 py-3 text-center">{{ $log->fatigue }}</td>
+                                    @else
+                                        <td class="px-4 py-3 text-center text-gray-400" title="体力（旧）">{{ $log->stamina ?? '—' }}</td>
+                                    @endif
                                     <td class="px-4 py-3 text-center">{{ $log->mental_capacity }}</td>
                                     <td class="px-4 py-3 text-center {{ $log->sleep_hours === null ? 'text-gray-300' : 'text-gray-700' }}">
                                         {{ $log->sleep_hours === null ? '—' : rtrim(rtrim((string) $log->sleep_hours, '0'), '.').'h' }}

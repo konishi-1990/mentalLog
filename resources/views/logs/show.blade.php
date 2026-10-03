@@ -2,13 +2,17 @@
     // 良し悪しの向きは項目ごとに異なる（ストレスと持ち越し感は高いほど悪い）
     $scores = [
         'stress' => ['label' => 'ストレス', 'higher_is_better' => false],
-        'stamina' => ['label' => '体力', 'higher_is_better' => true],
+        // 体力は凍結（2026-10）。疲労度が無い過去ログだけ体力を出す
+        ...($log->fatigue === null && $log->stamina !== null
+            ? ['stamina' => ['label' => '体力', 'higher_is_better' => true]]
+            : ['fatigue' => ['label' => '疲労度', 'higher_is_better' => false]]),
         'mental_capacity' => ['label' => 'メンタル余裕', 'higher_is_better' => true],
     ];
     $extraScores = [
         'sleep_quality' => ['label' => '睡眠の質', 'higher_is_better' => true],
         'carryover' => ['label' => '前日からの持ち越し感', 'higher_is_better' => false],
         'controllability' => ['label' => 'コントロール可能度', 'higher_is_better' => true],
+        'morning_capacity' => ['label' => '起きたときの余裕', 'higher_is_better' => true],
     ];
 
     $scoreClass = function (bool $higherIsBetter, int $v): string {
@@ -43,8 +47,12 @@
                     @foreach ($scores as $field => $meta)
                         <div>
                             <div class="text-sm text-gray-500 mb-2">{{ $meta['label'] }}</div>
-                            <span class="score-badge {{ $scoreClass($meta['higher_is_better'], $log->$field) }}">{{ $log->$field }}</span>
-                            <span class="text-gray-400 text-sm"> / 10</span>
+                            @if ($log->$field !== null)
+                                <span class="score-badge {{ $scoreClass($meta['higher_is_better'], $log->$field) }}">{{ $log->$field }}</span>
+                                <span class="text-gray-400 text-sm"> / 10</span>
+                            @else
+                                <span class="text-gray-400">—</span>
+                            @endif
                         </div>
                     @endforeach
                 </div>
@@ -70,7 +78,7 @@
                         </span>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-4 text-center">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                     @foreach ($extraScores as $field => $meta)
                         <div>
                             <div class="text-sm text-gray-500 mb-2">{{ $meta['label'] }}</div>
@@ -96,6 +104,9 @@
                         @foreach ($onValues as $v)
                             <li class="text-sm text-gray-700">
                                 <span class="font-medium">{{ $v->checkItem->name }}</span>
+                                @if ($v->severity)
+                                    <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ \App\Support\SeverityLevels::label($v->severity) }}</span>
+                                @endif
                                 @if ($v->detail_text)
                                     <span class="text-gray-500">— {{ $v->detail_text }}</span>
                                 @endif

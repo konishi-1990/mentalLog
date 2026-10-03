@@ -10,9 +10,12 @@
     $personDetails = $personDetails ?? collect();
 
     $loggedOn = old('logged_on', $log?->logged_on?->format('Y-m-d') ?? now()->format('Y-m-d'));
+    // 体力は凍結し、疲労度に置き換えた（report-202610.md §2）。
+    // 改修前の日付のログを編集するときは疲労度を任意にし、既定値 5 が当時の値として入らないようにする。
+    $fatigueOptional = $log !== null && ! \App\Support\FormRevision::appliesTo($log->logged_on->format('Y-m-d'));
     $scores = [
         'stress' => ['label' => 'ストレス', 'default' => 5, 'hint' => '高いときつい'],
-        'stamina' => ['label' => '体力', 'default' => 5, 'hint' => '高いと元気'],
+        'fatigue' => ['label' => '疲労度', 'default' => 5, 'hint' => '高いと疲れている', 'optional' => $fatigueOptional],
         'mental_capacity' => ['label' => 'メンタル余裕', 'default' => 5, 'hint' => '高いと余裕あり'],
     ];
 
@@ -20,7 +23,14 @@
     $extraScores = [
         'sleep_quality' => ['label' => '睡眠の質', 'hint' => '高いとよく眠れた'],
         'carryover' => ['label' => '前日からの持ち越し感', 'hint' => '高いと引きずっている'],
-        'controllability' => ['label' => 'コントロール可能度', 'hint' => '高いと自分で動かせた'],
+    ];
+
+    // 数値セクションに置く任意項目。「くわしく」の中では入力率が落ちていたため外に出す
+    // （report-202610.md §1。持ち越し感と r=−0.83 で最も効いている指標）。
+    $mainOptionalScores = [
+        'controllability' => ['label' => 'コントロール可能度', 'hint' => '高いと自分で動かせた・任意'],
+        // 夕方の余裕との差で「朝からどう動いたか」、前日との差で「どれだけ持ち越したか」を見る
+        'morning_capacity' => ['label' => '起きたときの余裕', 'hint' => '高いと余裕あり・任意'],
     ];
 
     $sleepHours = old('sleep_hours', $log?->sleep_hours);
@@ -47,7 +57,17 @@
                 'key' => $key,
                 'label' => $meta['label'],
                 'hint' => $meta['hint'],
-                'current' => old($key, $log?->{$key} ?? $meta['default']),
+                'current' => old($key, $log?->{$key} ?? (($meta['optional'] ?? false) ? null : $meta['default'])),
+                'optional' => $meta['optional'] ?? false,
+            ])
+        @endforeach
+        @foreach ($mainOptionalScores as $key => $meta)
+            @include('logs.partials.score-slider', [
+                'key' => $key,
+                'label' => $meta['label'],
+                'hint' => $meta['hint'],
+                'current' => old($key, $log?->{$key}),
+                'optional' => true,
             ])
         @endforeach
     </section>
@@ -107,6 +127,7 @@
             @php
                 $isOn = (bool) old("check_items.{$item->id}.is_on", $checkValues[$item->id]->is_on ?? false);
                 $detail = old("check_items.{$item->id}.detail_text", $checkValues[$item->id]->detail_text ?? '');
+                $severity = old("check_items.{$item->id}.severity", $checkValues[$item->id]->severity ?? null);
             @endphp
             <div class="border-b border-gray-100 pb-3 last:border-0" data-check-row>
                 <div class="flex items-center gap-6">
@@ -120,10 +141,22 @@
                                {{ $isOn ? '' : 'checked' }} data-toggle-detail> ✕
                     </label>
                 </div>
-                <input type="text" name="check_items[{{ $item->id }}][detail_text]" value="{{ $detail }}"
-                       placeholder="○の内容（任意）"
-                       class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm {{ $isOn ? '' : 'hidden' }}"
-                       data-detail-input>
+                {{-- ○のときだけ表示：強度（既定値なし）と内容 --}}
+                <div class="mt-2 space-y-2 {{ $isOn ? '' : 'hidden' }}" data-detail-input>
+                    <div class="flex flex-wrap items-center gap-3 text-sm">
+                        <span class="text-xs text-gray-500">強度</span>
+                        @foreach (\App\Support\SeverityLevels::options() as $value => $severityLabel)
+                            <label class="inline-flex items-center gap-1">
+                                <input type="radio" name="check_items[{{ $item->id }}][severity]" value="{{ $value }}" @checked((string) $severity === (string) $value)>
+                                {{ $severityLabel }}
+                            </label>
+                        @endforeach
+                    </div>
+                    @error("check_items.{$item->id}.severity") <p class="text-sm text-red-600">{{ $message }}</p> @enderror
+                    <input type="text" name="check_items[{{ $item->id }}][detail_text]" value="{{ $detail }}"
+                           placeholder="○の内容（任意）"
+                           class="w-full rounded-md border-gray-300 text-sm shadow-sm">
+                </div>
             </div>
         @empty
             <p class="text-sm text-gray-500">○×項目が未設定です。</p>
@@ -265,7 +298,7 @@
 </div>
 
 <script>
-    // ○選択時のみ内容欄を表示
+    // ○選択時のみ強度・内容欄を表示
     document.querySelectorAll('[data-check-row]').forEach(row => {
         const detail = row.querySelector('[data-detail-input]');
         row.querySelectorAll('[data-toggle-detail]').forEach(radio => {

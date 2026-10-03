@@ -6,6 +6,8 @@ use App\Models\Person;
 use App\Models\User;
 use App\Support\DurationBuckets;
 use App\Support\EffectLevels;
+use App\Support\FormRevision;
+use App\Support\SeverityLevels;
 use Database\Seeders\ChecklistCategorySeeder;
 use Database\Seeders\ChecklistOptionSeeder;
 
@@ -438,4 +440,136 @@ it('カテゴリの説明文がフォームに表示される（摂取物への�
         ->assertOk()
         ->assertSee('コーヒー・お酒・薬はこちら')
         ->assertSee('超重要');
+});
+
+it('コントロール可能度は「くわしく」の外（数値セクション）に描画される', function () {
+    $user = User::factory()->create();
+
+    $html = $this->actingAs($user)->get(route('logs.create'))->assertOk()->getContent();
+
+    // 最も効いている指標なのに「くわしく」の中で入力率が 30% まで落ちていた（report-202610.md §1）
+    expect(strpos($html, 'data-score-name="controllability"'))->toBeLessThan(strpos($html, '<details'))
+        // 持ち越し感は「くわしく」に残す（要判断 E-1）
+        ->and(strpos($html, 'data-score-name="carryover"'))->toBeGreaterThan(strpos($html, '<details'));
+});
+
+it('コントロール可能度は外に出しても任意のまま（触らなければ送信されない）', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('logs.create'))
+        ->assertOk()
+        ->assertDontSee(' name="controllability"', false);
+
+    $this->actingAs($user)->post(route('logs.store'), logPayload())->assertRedirect();
+
+    expect(Log::first()->controllability)->toBeNull();
+});
+
+it('ストレス源の各項目に強度の3ボタンが描画され、既定では何も選ばれていない', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+
+    $response = $this->actingAs($user)->get(route('logs.create'))->assertOk();
+
+    foreach (SeverityLevels::options() as $value => $label) {
+        $response->assertSee("name=\"check_items[{$item->id}][severity]\" value=\"{$value}\"", false)
+            ->assertSee($label);
+    }
+    $response->assertDontSee("name=\"check_items[{$item->id}][severity]\" value=\"1\" checked", false);
+});
+
+it('保存した強度が詳細画面にラベルで、編集画面に選択状態で出る', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create();
+    $log->checkItemValues()->create(['check_item_id' => $item->id, 'is_on' => true, 'severity' => 3]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk()->assertSee('重い');
+    $this->actingAs($user)->get(route('logs.edit', $log))->assertOk()
+        ->assertSee("name=\"check_items[{$item->id}][severity]\" value=\"3\" checked", false);
+});
+
+it('強度が NULL の○（過去ログ）でも詳細・編集画面が開ける', function () {
+    $user = User::factory()->create();
+    $item = $user->checkItems()->orderBy('sort_order')->first();
+    $log = Log::factory()->for($user)->create();
+    $log->checkItemValues()->create(['check_item_id' => $item->id, 'is_on' => true]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk();
+    $this->actingAs($user)->get(route('logs.edit', $log))->assertOk();
+});
+
+it('作成フォームは疲労度を必須スライダーで描画し、体力は出さない', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('logs.create'))
+        ->assertOk()
+        ->assertSee(' name="fatigue"', false)
+        ->assertSee('疲労度')
+        ->assertDontSee('data-score-name="stamina"', false);
+});
+
+it('疲労度が詳細画面と一覧に出る', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['fatigue' => 9, 'stamina' => null]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk()->assertSee('疲労度');
+    $this->actingAs($user)->get(route('logs.index'))->assertOk()->assertSee('疲労度');
+});
+
+it('体力あり・疲労度なしの過去ログは詳細画面で体力を表示する', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['stamina' => 4, 'fatigue' => null]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))
+        ->assertOk()
+        ->assertSee('体力')
+        ->assertDontSee('疲労度');
+});
+
+it('疲労度ありの新しいログは詳細画面に体力を出さない', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['stamina' => null, 'fatigue' => 6]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))
+        ->assertOk()
+        ->assertDontSee('体力');
+});
+
+it('過去ログ（適用日より前）の編集画面では、疲労度は未入力のまま（触らなければ送信されない）', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['logged_on' => '2026-07-06', 'stamina' => 4, 'fatigue' => null]);
+
+    // 既定値 5 が当時の疲労度として保存されないようにする
+    $this->actingAs($user)->get(route('logs.edit', $log))
+        ->assertOk()
+        ->assertSee('data-score-name="fatigue"', false)
+        ->assertDontSee(' name="fatigue"', false);
+});
+
+it('適用日以降のログの編集画面では、疲労度は必須スライダー', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['logged_on' => FormRevision::SINCE, 'fatigue' => 6]);
+
+    $this->actingAs($user)->get(route('logs.edit', $log))
+        ->assertOk()
+        ->assertSee(' name="fatigue"', false);
+});
+
+it('起きたときの余裕は数値セクションの任意スライダー（触らなければ送信されない）', function () {
+    $user = User::factory()->create();
+
+    $html = $this->actingAs($user)->get(route('logs.create'))->assertOk()
+        ->assertSee('起きたときの余裕')
+        ->assertDontSee(' name="morning_capacity"', false)
+        ->getContent();
+
+    expect(strpos($html, 'data-score-name="morning_capacity"'))->toBeLessThan(strpos($html, '<details'));
+});
+
+it('起きたときの余裕が詳細画面に出る（未入力は「—」）', function () {
+    $user = User::factory()->create();
+    $log = Log::factory()->for($user)->create(['morning_capacity' => 2]);
+
+    $this->actingAs($user)->get(route('logs.show', $log))->assertOk()->assertSee('起きたときの余裕');
 });

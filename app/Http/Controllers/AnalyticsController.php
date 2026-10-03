@@ -8,24 +8,26 @@ use Illuminate\View\View;
 
 class AnalyticsController extends Controller
 {
-    public function __construct(private readonly AnalyticsService $analytics)
-    {
-    }
+    public function __construct(private readonly AnalyticsService $analytics) {}
 
     public function index(Request $request): View
     {
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
+            'pivot' => ['nullable', 'date'],
         ]);
 
         $user = $request->user();
         $from = $validated['from'] ?? now()->subDays(29)->format('Y-m-d');
         $to = $validated['to'] ?? now()->format('Y-m-d');
+        $pivot = $validated['pivot'] ?? null;
 
         return view('analytics.index', [
             'from' => $from,
             'to' => $to,
+            'pivot' => $pivot,
+            'comparison' => $pivot ? $this->analytics->periodComparison($user, $from, $to, $pivot) : null,
             'series' => $this->analytics->timeSeries($user, $from, $to),
             'checkItemFreq' => $this->analytics->checkItemFrequency($user, $from, $to),
             'thoughtFreq' => $this->analytics->checklistFrequency($user, $from, $to, 'thought_habit'),
@@ -38,6 +40,7 @@ class AnalyticsController extends Controller
             'recoveryEffect' => $this->analytics->recoveryEffect($user, $from, $to),
             'coverage' => $this->analytics->coverage($user, $from, $to),
             'overlap' => $this->analytics->stressSourceOverlap($user, $from, $to),
+            'load' => $this->analytics->stressSourceLoad($user, $from, $to),
             'habitCount' => $this->analytics->thoughtHabitCount($user, $from, $to),
             'autocorrelations' => $this->analytics->autocorrelations($user, $from, $to),
             'inputLag' => $this->analytics->inputLag($user, $from, $to),
