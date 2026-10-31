@@ -35,6 +35,8 @@ class AnalyticsService
         ['controllability', 'mental_capacity'],
         // 同じ日の朝→夕方
         ['morning_capacity', 'mental_capacity'],
+        // 朝の余裕は睡眠の質で決まる（report-202611.md §3②）
+        ['sleep_quality', 'morning_capacity'],
     ];
 
     /**
@@ -43,6 +45,9 @@ class AnalyticsService
      * ストレスは日ごとに独立（r=+0.08）／メンタル余裕は持ち越す（r=+0.46）という構造は
      * 行動指針に直結するが、既存の correlations()（同日の相関）では出てこない。
      * report-202609.md §2 ④ / §5 #4。
+     *
+     * 2026-10 以降は夜の余裕がその日のストレスの裏返しになり（r=−0.90）、夜→翌日の持ち越しは消えた。
+     * 持ち越しは翌朝の余裕に出るため、翌朝を受ける組を足している。report-202611.md §2 / §3②。
      */
     private const AUTOCORRELATION_PAIRS = [
         ['mental_capacity', 'mental_capacity'],
@@ -53,6 +58,8 @@ class AnalyticsService
         ['carryover', 'mental_capacity'],
         // 前日の夕方→翌朝。持ち越しを朝の時点で直接測る
         ['mental_capacity', 'morning_capacity'],
+        ['carryover', 'morning_capacity'],
+        ['stress', 'morning_capacity'],
     ];
 
     /**

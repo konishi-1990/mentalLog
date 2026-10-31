@@ -1039,3 +1039,21 @@ it('起きたときの余裕：同日の朝→夕方の相関と、前日の夕�
         ->and($this->service->timeSeries($user)->first()->morning_capacity)->toBe(1)
         ->and(AnalyticsService::METRIC_LABELS['morning_capacity'])->toBe('起きたときの余裕');
 });
+
+it('起きたときの余裕：持ち越し感・ストレスからの翌朝と、睡眠の質との同日の相関に含まれる', function () {
+    // report-202611.md §3②：持ち越しは夜の余裕ではなく翌朝の余裕に出る
+    $user = User::factory()->create();
+    foreach (range(1, 4) as $i) {
+        Log::factory()->for($user)->create([
+            'logged_on' => "2026-07-0{$i}", 'carryover' => $i, 'stress' => $i + 2,
+            'sleep_quality' => $i, 'morning_capacity' => 10 - $i,
+        ]);
+    }
+
+    $keys = collect($this->service->correlations($user))->pluck('key');
+    $auto = collect($this->service->autocorrelations($user))->keyBy('key');
+
+    expect($keys)->toContain('sleep_quality_morning_capacity')
+        ->and($auto['carryover_next_morning_capacity']['n'])->toBe(3)
+        ->and($auto['stress_next_morning_capacity']['n'])->toBe(3);
+});
